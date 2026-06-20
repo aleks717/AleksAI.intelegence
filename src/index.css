@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-inter: 'Inter', sans-serif;
+  --bg: #ffffff;
+  --bg2: #f7f8fc;
+  --bg3: #eef0f8;
+  --text: #0d0f1a;
+  --text2: #4a4e6a;
+  --text3: #8b90a8;
+  --border: #e2e5f1;
+  --border2: #c8ccdf;
+  --accent: #4f6ef7;
+  --accent2: #6c83f8;
+  --accent-bg: #eef1ff;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 20px;
+  --shadow: 0 2px 16px rgba(79, 110, 247, .10);
+  --shadow-lg: 0 8px 40px rgba(79, 110, 247, .16);
+}
+
+body {
+  font-family: var(--font-inter);
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: .6;
+    transform: scale(.85);
+  }
+}
+
+.logo-dot {
+  animation: pulse 2s infinite;
+}
+
+@keyframes dot {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.typing-dots span {
+  animation: dot .8s ease-in-out infinite;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text3);
+}
+
+/* Custom styled thoughts for DeepSeek R1 */
+.thought-block {
+  border-left: 3px solid var(--border2);
+  background-color: var(--bg2);
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  color: var(--text2);
+  font-style: italic;
+}
