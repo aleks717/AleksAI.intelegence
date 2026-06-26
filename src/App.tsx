@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Paperclip, Image, Globe, Volume2, Copy, GraduationCap, MessageSquare, Radio, Mic, MicOff, VolumeX, PhoneOff, ArrowLeft, Sparkles, Loader2, Home, User as UserIcon, Cpu, Layers, Code, Eye, RefreshCw, Trash2, Plus, Play, Check, ExternalLink, FolderOpen, ChevronLeft, ChevronRight, MoreHorizontal, Lock } from 'lucide-react';
 import { AIModel, MODEL_DETAILS, type User, type Message, type ChatSession } from './types';
 import { 
   auth, 
@@ -11,6 +12,52 @@ import {
 import { LANGUAGES } from './languages';
 import { FAQ_DATA, INITIAL_REVIEWS, MODEL_COMPARISON_MATRIX, CHANGELOG_DATA, OTHER_TEXTS } from './contentData';
 
+const ensureFullHtml = (code: string): string => {
+  if (!code) return '';
+  const clean = code.trim();
+  const hasHtml = clean.toLowerCase().includes('<html>') || clean.toLowerCase().includes('<html') || clean.toLowerCase().includes('<!doctype');
+  if (hasHtml) {
+    return clean;
+  }
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #0b0f19;
+        color: #e2e8f0;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Space Grotesk', sans-serif;
+      }
+      /* Custom fine scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(139, 92, 246, 0.3);
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body class="bg-[#0b0f19] text-[#e2e8f0] p-4 font-sans min-h-screen">
+    ${clean}
+  </body>
+</html>`;
+};
+
 export default function App() {
   const getStartingCredits = (): number => {
     const custom = localStorage.getItem('aleksai_welcome_gift_credits');
@@ -18,8 +65,25 @@ export default function App() {
   };
 
   // Navigation & Page State
-  const [currentPage, setCurrentPage] = useState<'home' | 'chat' | 'profile'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'chat' | 'study' | 'profile'>('home');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    const stored = localStorage.getItem('aleksai_sidebar_open');
+    return stored === null ? false : stored === 'true';
+  });
+
+  const sidebarActive = isSidebarOpen && !!currentUser;
+
+  const toggleSidebar = () => {
+    if (!currentUser) {
+      triggerToast(language === 'de' ? 'Bitte registriere dich oder melde dich an, um das Menü freizuschalten! 🔒' : 'Please register or log in to unlock the menu! 🔒');
+      setShowAuthModal(true);
+      return;
+    }
+    const nextVal = !isSidebarOpen;
+    setIsSidebarOpen(nextVal);
+    localStorage.setItem('aleksai_sidebar_open', String(nextVal));
+  };
 
   // Internationalization / Translation state
   const [language, setLanguage] = useState<'de' | 'en' | 'es' | 'fr' | 'it' | 'tr' | 'sr'>(() => {
@@ -63,7 +127,7 @@ export default function App() {
   const [includeClaude, setIncludeClaude] = useState<boolean>(true);
   const [includeGemini, setIncludeGemini] = useState<boolean>(true);
   const [includeImageGen, setIncludeImageGen] = useState<boolean>(true);
-  const [rModel, setRModel] = useState<string>('AleksAI Max');
+  const [rModel, setRModel] = useState<string>('AleksAI Ultra');
 
   // Translation helper function
   const t = (key: keyof typeof LANGUAGES['de']) => {
@@ -81,14 +145,34 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   
+  // Liquid glass hover tracker ref (Direct style manipulation for lag-free performance!)
+  const liquidGlassRef = useRef<HTMLDivElement>(null);
+  
   // New AleksAI features state
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<{name: string, type: string, size: string, dataUrl?: string}[]>([]);
   const [isImageGeneratorMode, setIsImageGeneratorMode] = useState(false);
   const [isWebSearchActive, setIsWebSearchActive] = useState(false);
   const [isStudyModeActive, setIsStudyModeActive] = useState(false);
+  const [isLiquidGlassActive, setIsLiquidGlassActive] = useState(true);
+
+
+
+  // --- Study Center States ---
+  const [studySubject, setStudySubject] = useState('Mathe');
+  const [studyInput, setStudyInput] = useState('');
+  const [studyResult, setStudyResult] = useState('');
+  const [isStudyLoading, setIsStudyLoading] = useState(false);
+
+  // Voice conversational live room states
+  const [isLiveModeActive, setIsLiveModeActive] = useState(false);
+  const [micActive, setMicActive] = useState(true);
+  const [isSilentMode, setIsSilentMode] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  const [activeSpokenText, setActiveSpokenText] = useState('');
+  const recognitionRef = useRef<any>(null);
+  const activeSpokenTextRef = useRef<string>('');
 
   // Custom user-provided Gemini API Key to bypass platform / shared quota limits
   const [customApiKey, setCustomApiKey] = useState<string>(() => {
@@ -103,6 +187,234 @@ export default function App() {
       setCustomApiKey(localStorage.getItem('aleks_ai_custom_api_key') || '');
     }
   }, [currentUser]);
+
+  // --- Speech Synthesis Helpers ---
+
+  const cleanMarkupForSpeech = (text: string) => {
+    let clean = text;
+    // Remove thought process tags if present
+    clean = clean.replace(/<think>[\s\S]*?<\/think>/g, '');
+    // Remove code blocks
+    clean = clean.replace(/```[\s\S]*?```/g, '');
+    // Remove inline code
+    clean = clean.replace(/`[^`]*`/g, '');
+    // Remove bold/italic markup
+    clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');
+    clean = clean.replace(/\*([^*]+)\*/g, '$1');
+    // Remove markdown links but keep text
+    clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    // Remove bullet points symbols
+    clean = clean.replace(/^\s*[\-\*]\s+/gm, '');
+    // Replace extra spaces/newlines
+    clean = clean.replace(/\s+/g, ' ').trim();
+    return clean;
+  };
+
+  const speakText = (text: string) => {
+    if (!window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel(); // Cancel active speech
+      window.speechSynthesis.resume(); // Workaround for browser getting stuck/mute
+    } catch (err) {
+      console.warn("speechSynthesis cancel error:", err);
+    }
+
+    const cleaned = cleanMarkupForSpeech(text);
+    if (!cleaned) {
+      setLiveStatus('listening');
+      if (micActive) startSpeechRecognition();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    const targetLang = language === 'de' ? 'de-DE' : 'en-US';
+    utterance.lang = targetLang;
+    
+    // Asynchronously load voices
+    const voices = window.speechSynthesis.getVoices();
+    let selectedVoice = voices.find(v => v.lang === targetLang || v.lang.startsWith(targetLang));
+    if (!selectedVoice && voices.length > 0) {
+      selectedVoice = voices.find(v => v.lang.startsWith('de')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    }
+    
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+
+    // Adjust rate and pitch for a natural friendly AI tone
+    utterance.rate = 1.05;
+    utterance.pitch = 1.02;
+
+    utterance.onstart = () => {
+      setLiveStatus('speaking');
+    };
+
+    utterance.onend = () => {
+      setLiveStatus('listening');
+      if (micActive) {
+        startSpeechRecognition();
+      }
+    };
+
+    utterance.onerror = (e) => {
+      console.error("Speech Synthesis error:", e);
+      setLiveStatus('listening');
+      if (micActive) {
+        startSpeechRecognition();
+      }
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startSpeechRecognition = () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    
+    const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+
+    const rec = new SpeechRecognitionClass();
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = language === 'de' ? 'de-DE' : 'en-US';
+
+    rec.onstart = () => {
+      setLiveStatus('listening');
+      activeSpokenTextRef.current = '';
+      setActiveSpokenText('');
+    };
+
+    rec.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          final += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      const text = final || interim;
+      if (text) {
+        activeSpokenTextRef.current = text;
+        setActiveSpokenText(text);
+      }
+    };
+
+    rec.onerror = (e: any) => {
+      console.warn("Speech Recognition error:", e.error);
+    };
+
+    rec.onend = () => {
+      const finalPrompt = activeSpokenTextRef.current.trim();
+      if (finalPrompt) {
+        setLiveStatus('processing');
+        submitSpeechToAleksAI(finalPrompt);
+      } else {
+        if (isLiveModeActive && micActive && liveStatus !== 'speaking' && liveStatus !== 'processing') {
+          setTimeout(() => {
+            if (isLiveModeActive && micActive) {
+              startSpeechRecognition();
+            }
+          }, 400);
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch (err) {
+      console.error("Failed to start Speech Recognition:", err);
+    }
+  };
+
+  const stopSpeechRecognition = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+    }
+  };
+
+  const submitSpeechToAleksAI = async (text: string) => {
+    if (!currentUser) {
+      openAuthModal('login');
+      setIsLiveModeActive(false);
+      return;
+    }
+    if (isGenerating) return;
+
+    let targetSessionId = activeSessionId;
+    if (!targetSessionId) {
+      targetSessionId = `session_${Date.now()}`;
+      const newSession: ChatSession = {
+        id: targetSessionId,
+        title: text.length > 30 ? text.slice(0, 30) + '...' : text,
+        messages: [],
+        model: activeModel
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(targetSessionId);
+    }
+
+    triggerMessageSubmission(text, targetSessionId);
+  };
+
+  // Synchronise Voice Loop and synthesis transitions
+  useEffect(() => {
+    if (isLiveModeActive) {
+      if (micActive && liveStatus !== 'speaking' && liveStatus !== 'processing') {
+        startSpeechRecognition();
+      } else if (!micActive) {
+        stopSpeechRecognition();
+        setLiveStatus('idle');
+      }
+    } else {
+      stopSpeechRecognition();
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    return () => {
+      stopSpeechRecognition();
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [isLiveModeActive, micActive]);
+
+  // Read response text aloud when generation finishes in active Live Mode
+  useEffect(() => {
+    if (isLiveModeActive && !isGenerating && activeSessionId) {
+      const activeSession = sessions.find(s => s.id === activeSessionId);
+      if (activeSession && activeSession.messages.length > 0) {
+        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'ai') {
+          if (!isSilentMode) {
+            setLiveStatus('speaking');
+            speakText(lastMsg.content);
+          } else {
+            setLiveStatus('idle');
+            if (micActive) {
+              setTimeout(() => {
+                if (isLiveModeActive && micActive) startSpeechRecognition();
+              }, 1000);
+            }
+          }
+        }
+      }
+    }
+  }, [isGenerating]);
 
   const holdTimerRef = useRef<any>(null);
 
@@ -124,6 +436,11 @@ export default function App() {
   // Auth modal states
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
+  
+  // Post-registration survey states
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
+  const [surveyStep, setSurveyStep] = useState(1);
+  const [surveyAnswers, setSurveyAnswers] = useState<Record<string, string>>({});
   
   // Auth Form Fields
   const [loginUsername, setLoginUsername] = useState('');
@@ -252,6 +569,7 @@ export default function App() {
   // Layout Reference
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // 1. Page Load Initialization
   useEffect(() => {
@@ -481,8 +799,8 @@ export default function App() {
   };
 
   // Switch Active Page Route
-  const showPage = (p: 'home' | 'chat' | 'profile') => {
-    if (p === 'chat' && !currentUser) {
+  const showPage = (p: 'home' | 'chat' | 'study' | 'profile') => {
+    if ((p === 'chat' || p === 'profile') && !currentUser) {
       openAuthModal('login');
       return;
     }
@@ -660,6 +978,12 @@ export default function App() {
 
       updateAndSaveUser(newUserObj);
       setShowAuthModal(false);
+      
+      // Open the survey modal
+      setSurveyStep(1);
+      setSurveyAnswers({});
+      setShowSurveyModal(true);
+      
       showPage('chat');
       triggerToast(`Konto erstellt! Willkommen, ${newUserObj.firstName}. Du hast 100 Gratis-Credits bekommen.`);
       
@@ -980,6 +1304,35 @@ export default function App() {
     triggerMessageSubmission(input, targetSessionId);
   };
 
+  const askSuggestedQuestion = (question: string) => {
+    if (isGenerating) return;
+    if (!currentUser) {
+      openAuthModal('login');
+      return;
+    }
+    const isInfinite = currentUser.email?.toLowerCase() === 'aleks.smolovic@web.de' && localStorage.getItem('aleksai_admin_infinite') === 'true';
+    if (currentUser.credits <= 0 && !isInfinite) {
+      triggerToast('Fehler: Du hast keine Credits mehr für heute!');
+      return;
+    }
+
+    let targetSessionId = activeSessionId;
+    if (!targetSessionId) {
+      targetSessionId = `session_${Date.now()}`;
+      const newSession: ChatSession = {
+        id: targetSessionId,
+        title: question.length > 30 ? question.slice(0, 30) + '...' : question,
+        messages: [],
+        model: activeModel
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(targetSessionId);
+    }
+
+    setChatInput('');
+    triggerMessageSubmission(question, targetSessionId);
+  };
+
   const triggerMessageSubmission = async (text: string, sessionId: string) => {
     if (!currentUser) return;
 
@@ -1114,7 +1467,7 @@ export default function App() {
   };
 
   // Content Message Parser inside React
-  const renderMessageContent = (msg: Message) => {
+  const renderMessageContent = (msg: Message, isLatest: boolean = false) => {
     let text = msg.content;
     const blocks: Array<{ type: 'thought' | 'code' | 'text'; content: string; language?: string }> = [];
 
@@ -1185,19 +1538,14 @@ export default function App() {
             );
           }
 
-          // Format inline bold bounds (**text**)
-          const parts = block.content.split(/(\*\*.*?\*\*)/g);
-          const formattedInline = parts.map((part, index) => {
-            if (part.startsWith('**') && part.endsWith('**')) {
-              return <strong key={index} className={`font-bold ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>{part.slice(2, -2)}</strong>;
-            }
-            return part;
-          });
-
           return (
-            <p key={idx} className={`text-[15px] leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-100' : 'text-[#0d0f1a]'}`}>
-              {formattedInline}
-            </p>
+            <TypewriterParagraph
+              key={idx}
+              content={block.content}
+              isLatest={isLatest}
+              darkMode={darkMode}
+              idx={idx}
+            />
           );
         })}
 
@@ -1272,14 +1620,239 @@ export default function App() {
 
   const renderedApp = (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${darkMode ? 'dark bg-[#0b0f19] text-[#e2e8f0]' : 'bg-[#fafbfe] text-[#0d0f1a]'}`}>
-      {/* ── HEADER NAVIGATION ── */}
-      <nav className={`fixed top-0 left-0 right-0 z-40 border-b h-16 flex items-center justify-between px-4 md:px-6 transition-colors duration-300 ${darkMode ? 'bg-[#0f172a]/95 border-slate-800 text-white' : 'bg-white/95 border-[#e2e5f1]'}`}>
+      
+      {/* 🔮 PREMIUM GLASSMORPHISM VERTICAL SIDEBAR NAVIGATION */}
+      <aside 
+        onMouseMove={(e) => {
+          if (isLiquidGlassActive && liquidGlassRef.current) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            const offset = window.innerWidth >= 768 ? 24 : 22;
+            liquidGlassRef.current.style.transform = `translateY(${y - offset}px)`;
+            liquidGlassRef.current.style.opacity = '1';
+          }
+        }}
+        onMouseLeave={() => {
+          if (liquidGlassRef.current) {
+            liquidGlassRef.current.style.opacity = '0';
+          }
+        }}
+        className={`fixed top-0 bottom-0 left-0 w-16 md:w-20 z-50 flex flex-col items-center justify-between py-6 transition-all duration-300 border-r ${
+          darkMode 
+            ? 'bg-slate-950/80 border-slate-900/50 shadow-[4px_0_24px_rgba(0,0,0,0.6)]' 
+            : 'bg-white/70 border-slate-200/40 shadow-[4px_0_20px_rgba(0,0,0,0.03)]'
+        } backdrop-blur-[24px] overflow-hidden ${sidebarActive ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        {/* 🧪 DYNAMIC LIQUID GLASS BLOB TRACKING CURSOR (LAG-FREE DIRECT MANIPULATION) */}
         <div 
-          onClick={() => showPage('home')}
-          className="flex items-center gap-2 font-extrabold text-[15px] sm:text-[18px] md:text-[20px] cursor-pointer"
-        >
-          <AleksAILogo className="w-5 h-5 sm:w-6 sm:h-6 text-[#4f6ef7]" glow={true} />
-          <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AleksAI. Intelegence</span>
+          ref={liquidGlassRef}
+          className={`absolute left-2.5 right-2.5 h-11 md:h-12 rounded-2xl pointer-events-none transition-opacity duration-300 z-0 border backdrop-blur-[12px] opacity-0 ${
+            darkMode 
+              ? 'bg-white/[0.07] border-white/[0.14] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_8px_24px_rgba(79,110,247,0.25)]' 
+              : 'bg-gradient-to-tr from-[#4f6ef7]/15 to-[#4f6ef7]/5 border-[#4f6ef7]/20 shadow-[0_8px_20px_rgba(79,110,247,0.15)]'
+          }`}
+          style={{ 
+            top: '0px',
+          }}
+        />
+
+        {/* Top Branding Section */}
+        <div className="flex flex-col items-center gap-1 text-center select-none animate-fade-in relative z-10">
+          <div 
+            onClick={() => showPage('home')}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer ${
+              darkMode 
+                ? 'bg-slate-900/80 border border-white/5 hover:border-indigo-500/50 shadow-lg hover:shadow-indigo-500/15' 
+                : 'bg-white/80 border border-slate-200/50 hover:border-[#4f6ef7]/50 shadow-md hover:shadow-[#4f6ef7]/10'
+            } active:scale-95 group relative`}
+          >
+            <AleksAILogo className="w-5.5 h-5.5 text-[#4f6ef7] group-hover:rotate-12 transition-transform duration-300" glow={true} />
+            
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[9px] uppercase font-black tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/15">
+              AleksAI
+            </div>
+          </div>
+          <span className="text-[7.5px] font-black tracking-widest text-[#4f6ef7] opacity-80 select-none uppercase mt-1">v2.2</span>
+        </div>
+
+        {/* 5 Tabs Navigation Container */}
+        <nav className="flex flex-col gap-4.5 w-full px-1.5 items-center relative z-10">
+          
+          {/* TAB 1: Home/Entdecken */}
+          <button
+            onClick={() => showPage('home')}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
+              currentPage === 'home'
+                ? (darkMode 
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.25)]' 
+                    : 'bg-[#eef1ff] text-[#4f6ef7] border border-[#4f6ef7]/30 shadow-sm')
+                : (darkMode 
+                    ? 'text-slate-450 hover:text-white hover:bg-slate-900/10' 
+                    : 'text-[#4a4e6a] hover:text-slate-950 hover:bg-slate-100/50')
+            }`}
+            title={language === 'de' ? 'Entdecken' : 'Home'}
+          >
+            {currentPage === 'home' && (
+              <span className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-[#4f6ef7]" />
+            )}
+            <Home className="w-5 h-5" />
+            
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
+              {language === 'de' ? 'Entdecken' : 'Home'}
+            </div>
+          </button>
+
+          {/* TAB 2: AleksAI Chat */}
+          <button
+            onClick={() => showPage('chat')}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
+              currentPage === 'chat'
+                ? (darkMode 
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.25)]' 
+                    : 'bg-[#eef1ff] text-[#4f6ef7] border border-[#4f6ef7]/30 shadow-sm')
+                : (darkMode 
+                    ? 'text-slate-450 hover:text-white hover:bg-slate-900/10' 
+                    : 'text-[#4a4e6a] hover:text-slate-950 hover:bg-slate-100/50')
+            }`}
+            title="Chat"
+          >
+            {currentPage === 'chat' && (
+              <span className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-[#4f6ef7]" />
+            )}
+            <MessageSquare className="w-5 h-5" />
+            
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
+              {language === 'de' ? 'AleksAI Chat' : 'AleksAI Chat'}
+            </div>
+          </button>
+
+
+
+          {/* TAB 4: Schulmodus */}
+          <button
+            onClick={() => {
+              setIsStudyModeActive(true);
+              showPage('study');
+            }}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
+              currentPage === 'study'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                : (darkMode 
+                    ? 'text-slate-450 hover:text-white hover:bg-slate-900/10' 
+                    : 'text-[#4a4e6a] hover:text-slate-950 hover:bg-slate-100/50')
+            }`}
+            title="Schulmodus"
+          >
+            {currentPage === 'study' && (
+              <span className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-emerald-500" />
+            )}
+            <GraduationCap className="w-5 h-5" />
+            
+            {/* Glowing dot for active status */}
+            <span className={`absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full ${isStudyModeActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-450/30'}`} />
+
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
+              {language === 'de' ? 'Schulmodus' : 'Study Mode'}
+            </div>
+          </button>
+
+          {/* TAB 5: Profile & Settings */}
+          <button
+            onClick={() => {
+              if (!currentUser) {
+                openAuthModal('login');
+                return;
+              }
+              showPage('profile');
+            }}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
+              currentPage === 'profile'
+                ? (darkMode 
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.25)]' 
+                    : 'bg-[#eef1ff] text-[#4f6ef7] border border-[#4f6ef7]/30 shadow-sm')
+                : (darkMode 
+                    ? 'text-slate-450 hover:text-white hover:bg-slate-900/10' 
+                    : 'text-[#4a4e6a] hover:text-slate-950 hover:bg-slate-100/50')
+            }`}
+            title="Mein Profil"
+          >
+            {currentPage === 'profile' && (
+              <span className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-[#4f6ef7]" />
+            )}
+            <UserIcon className="w-5 h-5" />
+            
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
+              {language === 'de' ? 'Mein Profil' : 'My Profile'}
+            </div>
+          </button>
+
+        </nav>
+
+        {/* Bottom Shortcuts / Settings */}
+        <div className="flex flex-col gap-3.5 items-center w-full px-1.5 relative z-10">
+          {/* Quick theme toggler */}
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 cursor-pointer group ${
+              darkMode 
+                ? 'bg-slate-900 text-amber-400 hover:bg-slate-800' 
+                : 'bg-slate-100 text-[#4a4e6a] hover:bg-slate-200'
+            }`}
+            title={language === 'de' ? 'Modus wechseln' : 'Toggle theme'}
+          >
+            <span className="text-sm select-none group-hover:scale-110 transition">{darkMode ? '☀️' : '🌙'}</span>
+          </button>
+
+          {/* User profile initial circular button */}
+          {currentUser && (
+            <div 
+              onClick={() => showPage('profile')}
+              className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] border border-blue-200/20 text-white flex items-center justify-center font-black text-xs hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer relative group shrink-0 animate-fade-in"
+              title={currentUser.firstName}
+            >
+              {currentUser.profilePic ? (
+                <img src={currentUser.profilePic} alt="" className="w-full h-full rounded-full object-cover" />
+              ) : (
+                currentUser.firstName[0].toUpperCase()
+              )}
+              
+              {/* Tooltip */}
+              <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[9px] uppercase font-black tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 border border-white/10 animate-fade-in">
+                {currentUser.firstName}
+              </div>
+            </div>
+          )}
+
+          {/* ↩️ SLICK COLLAPSE SIDEBAR TRIGGER */}
+          <button
+            onClick={toggleSidebar}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 cursor-pointer group ${
+              darkMode 
+                ? 'bg-slate-900 border border-white/5 text-slate-405 hover:text-violet-400 hover:bg-slate-800 shadow-md' 
+                : 'bg-white border border-slate-200/50 text-[#4a4e6a] hover:text-[#4f6ef7] hover:bg-slate-50 shadow-sm'
+            }`}
+            title={language === 'de' ? 'Menü einklappen' : 'Collapse Sidebar'}
+          >
+            <ChevronLeft className="w-4.5 h-4.5 group-hover:-translate-x-0.5 transition-transform duration-200" />
+          </button>
+        </div>
+      </aside>
+
+      {/* ── HEADER NAVIGATION ── */}
+      <nav className={`fixed top-0 ${sidebarActive ? 'left-16 md:left-20' : 'left-0'} right-0 z-40 border-b h-16 flex items-center justify-between px-4 md:px-6 transition-all duration-300 ${darkMode ? 'bg-[#0f172a]/95 border-slate-800 text-white' : 'bg-white/95 border-[#e2e5f1]'}`}>
+        <div className="flex items-center gap-2 md:gap-3">
+          <div 
+            onClick={() => showPage('home')}
+            className="flex items-center gap-2 font-extrabold text-[15px] sm:text-[18px] md:text-[20px] cursor-pointer"
+          >
+            <AleksAILogo className="w-5 h-5 sm:w-6 sm:h-6 text-[#4f6ef7]" glow={true} />
+            <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AleksAI. Intelegence</span>
+          </div>
         </div>
 
         {/* Dynamic Model Switcher + Auth Buttons Next to it */}
@@ -1342,6 +1915,7 @@ export default function App() {
             )}
           </div>
 
+
           <div className={`h-6 w-px ${darkMode ? 'bg-slate-800' : 'bg-[#e2e5f1]'}`}></div>
 
           {/* User Auth Info State */}
@@ -1384,7 +1958,11 @@ export default function App() {
                 onClick={() => showPage('profile')}
                 className="w-8 h-8 border border-blue-200 rounded-full bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] flex items-center justify-center font-bold text-white text-[12px] hover:scale-105 transition duration-200 shadow-sm cursor-pointer shrink-0"
               >
-                {currentUser.firstName[0].toUpperCase()}
+                {currentUser.profilePic ? (
+                  <img src={currentUser.profilePic} alt="" className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  currentUser.firstName[0].toUpperCase()
+                )}
               </div>
             </div>
           )}
@@ -1392,7 +1970,7 @@ export default function App() {
       </nav>
 
       {adminBroadcast && (
-        <div className="fixed top-16 left-0 right-0 z-35 bg-gradient-to-r from-[#d946ef] via-[#8b5cf6] to-[#3b82f6] text-white text-[10px] sm:text-xs py-2 px-4 font-black text-center flex items-center justify-center gap-2 shadow-md">
+        <div className={`fixed top-16 ${sidebarActive ? 'left-16 md:left-20' : 'left-0'} right-0 z-35 bg-gradient-to-r from-[#d946ef] via-[#8b5cf6] to-[#3b82f6] text-white text-[10px] sm:text-xs py-2 px-4 font-black text-center flex items-center justify-center gap-2 shadow-md transition-all duration-300`}>
           <span className="w-2 h-2 bg-[#22c55e] rounded-full shrink-0 animate-ping"></span>
           <span className="uppercase tracking-widest text-[9px] bg-black/40 px-2 py-0.5 rounded font-black">Mitteilung</span>
           <span className="truncate">{adminBroadcast}</span>
@@ -1409,7 +1987,7 @@ export default function App() {
       )}
 
       {/* ── PAGE CONTENT ROUTING ── */}
-      <main className={`flex-1 mt-16 flex flex-col ${adminBroadcast ? 'pt-8' : ''}`}>
+      <main className={`flex-1 mt-16 flex flex-col transition-all duration-300 ${sidebarActive ? 'pl-16 md:pl-20' : 'pl-0'} ${adminBroadcast ? 'pt-8' : ''}`}>
         {/* ── HOME LANDING SCREEN ── */}
         {currentPage === 'home' && (
           <div className="min-h-[calc(100vh-64px)] flex flex-col justify-between">
@@ -1499,16 +2077,16 @@ export default function App() {
               </div>
 
               {/* Models selection card grid featuring customized AleksAILogo for each model */}
-              <div className="w-full max-w-4xl mt-12 text-left">
+              <div className="w-full max-w-5xl mt-12 text-left">
                 <span className={`text-[10px] font-extrabold uppercase tracking-widest block mb-3 text-center ${darkMode ? 'text-blue-400' : 'text-[#4f6ef7]'}`}>
                   {t('selectPreferModel')}
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {Object.entries(MODEL_DETAILS).map(([key, details]) => (
                     <button
                       key={key}
                       onClick={() => handleSelectModel(key as AIModel)}
-                      className={`p-4 rounded-2xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 relative overflow-hidden group ${darkMode ? 'bg-slate-900 border-slate-800 hover:border-blue-500' : 'bg-white border-[#e2e5f1] hover:border-[#4f6ef7] shadow-sm hover:shadow-md'} ${activeModel === key ? (darkMode ? 'ring-2 ring-blue-500 bg-slate-850 border-transparent' : 'ring-2 ring-[#4f6ef7] bg-blue-50/40 border-transparent') : ''}`}
+                      className={`p-3.5 rounded-2xl border text-left transition-all duration-300 cursor-pointer flex flex-col justify-between h-36 relative overflow-hidden group ${darkMode ? 'bg-slate-900 border-slate-800 hover:border-blue-500' : 'bg-white border-[#e2e5f1] hover:border-[#4f6ef7] shadow-sm hover:shadow-md'} ${activeModel === key ? (darkMode ? 'ring-2 ring-blue-500 bg-slate-850 border-transparent' : 'ring-2 ring-[#4f6ef7] bg-blue-50/40 border-transparent') : ''}`}
                     >
                       {/* Ambient background decoration with exact AleksAI Logo contour */}
                       <div className="absolute right-[-15px] bottom-[-15px] opacity-[0.06] group-hover:scale-110 group-hover:rotate-6 transition duration-500">
@@ -1518,12 +2096,12 @@ export default function App() {
                       <div className="flex justify-between items-start w-full">
                         {/* Custom styled AleksAI Logo badge with model's specific color overlay */}
                         <div className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${details.color} text-white flex items-center justify-center p-1.5 shadow-sm`}>
-                          <AleksAILogo className="w-full h-full text-white" />
+                          <ModelLogo model={key as AIModel} className="w-5 h-5 text-white" color="text-white" />
                         </div>
                       </div>
 
                       <div className="mt-4">
-                        <span className={`font-black tracking-tight text-[13px] block ${darkMode ? 'text-white' : 'text-slate-900'}`}>{details.name}</span>
+                        <span className={`font-black tracking-tight text-[11.5px] block leading-tight ${darkMode ? 'text-white' : 'text-slate-900'}`}>{details.name}</span>
                         <span className="text-[9px] opacity-65 line-clamp-2 mt-0.5 leading-snug">{details.description}</span>
                       </div>
 
@@ -1579,7 +2157,7 @@ export default function App() {
                   </h2>
                   <p className={`text-xs md:text-sm max-w-xl mx-auto leading-relaxed ${darkMode ? 'text-slate-400' : 'text-[#4a4e6a]'}`}>
                     {language === 'de' 
-                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AleksAI Max, neo, Pro, Ultra und buissnis im Vergleich zu teuren Abos sparst!'
+                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AleksAI Max, neo, Pro, Ultra und Business im Vergleich zu teuren Abos sparst!'
                       : 'Calculate in real-time how much money you save by using AleksAI’s free tools instead of paying for expensive monthly subscriptions.'}
                   </p>
                 </div>
@@ -1777,7 +2355,7 @@ export default function App() {
                           <span className="inline-flex items-center gap-1.5"><ModelLogo model={AIModel.LLAMA_ULTRA} className="w-3.5 h-3.5" /> Ultra (Meta Llama)</span>
                         </th>
                         <th className="p-4 text-xs font-black uppercase tracking-wider text-orange-600 dark:text-orange-400">
-                          <span className="inline-flex items-center gap-1.5"><ModelLogo model={AIModel.CLAUDE} className="w-3.5 h-3.5" /> buissnis (Claude)</span>
+                          <span className="inline-flex items-center gap-1.5"><ModelLogo model={AIModel.CLAUDE} className="w-3.5 h-3.5" /> Business (Claude)</span>
                         </th>
                       </tr>
                     </thead>
@@ -2014,7 +2592,7 @@ export default function App() {
                               <option value="AleksAI neo">AleksAI neo</option>
                               <option value="AleksAI Pro">AleksAI Pro</option>
                               <option value="AleksAI Ultra">AleksAI Ultra</option>
-                              <option value="AleksAI buissnis">AleksAI buissnis</option>
+                              <option value="AleksAI Business">AleksAI Business</option>
                             </select>
                           </div>
                         </div>
@@ -2104,7 +2682,22 @@ export default function App() {
             {/* Sidebar with list */}
             {isSidebarOpen && (
               <aside className={`w-72 border-r flex flex-col p-4 shrink-0 transition-colors ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#f7f8fc] border-[#e2e5f1]'}`}>
-                <span className={`text-[10px] font-black uppercase tracking-wider mb-2.5 block ${darkMode ? 'text-slate-500' : 'text-[#8b90a8]'}`}>{t('chat')}s</span>
+                <div className="flex justify-between items-center mb-2.5">
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${darkMode ? 'text-slate-500' : 'text-[#8b90a8]'}`}>{language === 'de' ? 'Verlauf / Chats' : `${t('chat')}s`}</span>
+                  <button
+                    onClick={() => setIsSidebarOpen(false)}
+                    className={`p-1 rounded-lg transition-colors border cursor-pointer hover:scale-102 active:scale-98 transition ${
+                      darkMode 
+                        ? 'bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white border-slate-700' 
+                        : 'bg-white hover:bg-slate-100 text-[#4a4e6a] hover:text-slate-950 border-[#e2e5f1] shadow-sm'
+                    }`}
+                    title={language === 'de' ? 'Verlauf schließen' : 'Close history'}
+                  >
+                    <span className="text-[10px] font-black px-1.5 py-0.5 flex items-center justify-center gap-1 uppercase tracking-wider">
+                      ✕ {language === 'de' ? 'Schließen' : 'Close'}
+                    </span>
+                  </button>
+                </div>
                 <button 
                   onClick={startNewChat}
                   className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white rounded-xl py-2.5 px-4 font-bold text-xs md:text-sm flex items-center justify-center gap-2 transition cursor-pointer mb-4 shadow"
@@ -2257,7 +2850,8 @@ export default function App() {
             )}
 
             {/* Chat Frame Panel */}
-            <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-[#0f172a]' : 'bg-white'}`}>
+            <div className={`flex-1 flex flex-col overflow-hidden relative ${darkMode ? 'bg-[#0f172a]' : 'bg-white'}`}>
+              
               {/* Header with collapsible toggle and current active model */}
               <div className={`px-4 py-3 border-b flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-900 border-slate-850' : 'bg-slate-50 border-[#e2e5f1]'}`}>
                 <div className="flex items-center gap-3">
@@ -2303,7 +2897,11 @@ export default function App() {
                         {/* Avatar */}
                         <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center font-bold text-[12px] shadow-sm ${msg.role === 'user' ? 'bg-gradient-to-tr from-[#22c55e] to-[#16a34a] text-white' : 'bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] text-white'}`}>
                           {msg.role === 'user' ? (
-                            currentUser?.firstName[0].toUpperCase() ?? 'U'
+                            currentUser?.profilePic ? (
+                              <img src={currentUser.profilePic} alt="" className="w-full h-full rounded-full object-cover" />
+                            ) : (
+                              currentUser?.firstName[0].toUpperCase() ?? 'U'
+                            )
                           ) : (
                             msg.model && MODEL_DETAILS[msg.model] ? (
                               <ModelLogo model={msg.model} className="w-5 h-5" />
@@ -2342,24 +2940,29 @@ export default function App() {
                             : `pl-1 pr-4 py-1 text-sm md:text-[15.5px] leading-relaxed select-text w-full ${darkMode ? 'text-slate-100' : 'text-[#0d0f1a]'}`
                           }>
                             {msg.role === 'ai' ? (
-                              renderMessageContent(msg)
+                              renderMessageContent(msg, i === activeSessionObj.messages.length - 1)
                             ) : (
                               <p className="text-sm md:text-[15px] whitespace-pre-wrap leading-relaxed select-text">{msg.content}</p>
                             )}
                           </div>
                           
-                          {/* Copy and Listen Action Utilities */}
+                          {/* Copy, Listen and Ask follow-up Action Utilities */}
                           {msg.role === 'ai' && (
-                            <div className="flex items-center gap-3.5 mt-2.5 text-[10px] text-slate-500 font-bold px-1 select-none">
+                            <div className="flex flex-wrap items-center gap-2 mt-3 p-1 select-none">
                               <button
                                 onClick={() => {
                                   navigator.clipboard.writeText(msg.content);
                                   triggerToast(language === 'de' ? 'In Zwischenablage kopiert!' : 'Copied to clipboard!');
                                 }}
-                                className={`flex items-center gap-1 transition ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide transition cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                                  darkMode 
+                                    ? 'bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-750 shadow-sm' 
+                                    : 'bg-white hover:bg-slate-50 text-[#4a4e6a] hover:text-[#4f6ef7] border-[#e2e5f1] shadow-sm'
+                                }`}
                                 title={language === 'de' ? 'Kopieren' : 'Copy'}
                               >
-                                <span>📋</span> {language === 'de' ? 'Kopieren' : 'Copy'}
+                                <Copy className="w-3.5 h-3.5 text-[#4f6ef7]" />
+                                <span>{language === 'de' ? 'Kopieren' : 'Copy'}</span>
                               </button>
                               
                               <button
@@ -2379,10 +2982,33 @@ export default function App() {
                                     triggerToast('TTS nicht unterstützt.');
                                   }
                                 }}
-                                className={`flex items-center gap-1 transition ${darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide transition cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                                  darkMode 
+                                    ? 'bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-750 shadow-sm' 
+                                    : 'bg-white hover:bg-slate-50 text-[#4a4e6a] hover:text-[#e11d48] border-[#e2e5f1] shadow-sm'
+                                }`}
                                 title={language === 'de' ? 'Anhören' : 'Listen'}
                               >
-                                <span>🔊</span> {language === 'de' ? 'Anhören' : 'Listen'}
+                                <Volume2 className="w-3.5 h-3.5 text-[#e11d48]" />
+                                <span>{language === 'de' ? 'Anhören' : 'Listen'}</span>
+                              </button>
+ 
+                              <button
+                                onClick={() => {
+                                  setChatInput(language === 'de' ? 'Dazu eine Frage: ' : 'Follow-up question: ');
+                                  setTimeout(() => {
+                                    chatInputRef.current?.focus();
+                                  }, 80);
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide transition cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                                  darkMode 
+                                    ? 'bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-750 shadow-sm' 
+                                    : 'bg-white hover:bg-slate-50 text-[#4a4e6a] hover:text-[#10b981] border-[#e2e5f1] shadow-sm'
+                                }`}
+                                title={language === 'de' ? 'Dazu etwas fragen' : 'Ask about this'}
+                              >
+                                <MessageSquare className="w-3.5 h-3.5 text-[#10b981]" />
+                                <span>{language === 'de' ? 'Dazu etwas fragen' : 'Ask about this'}</span>
                               </button>
                             </div>
                           )}
@@ -2445,15 +3071,15 @@ export default function App() {
                               : (language === 'de' ? 'Internetsuche deaktiviert' : 'Internet search disabled')
                           );
                         }}
-                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border transition duration-150 cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
                           isWebSearchActive 
-                            ? 'bg-blue-500/10 text-blue-500 border-blue-500/30 shadow-sm' 
-                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-350' : 'text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700')
+                            ? 'bg-[#4f6ef7]/10 text-[#4f6ef7] border-[#4f6ef7]/30 shadow-sm scale-[1.02]' 
+                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-[#4f6ef7]')
                         }`}
                       >
-                        <span className="text-xs">🌐</span>
+                        <Globe className={`w-3.5 h-3.5 ${isWebSearchActive ? 'text-[#4f6ef7] animate-pulse' : 'text-indigo-400'}`} />
                         <span>{language === 'de' ? 'Websuche' : 'Websearch'}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isWebSearchActive ? 'bg-blue-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isWebSearchActive ? 'bg-[#4f6ef7]' : 'bg-slate-400/60'}`}></span>
                       </button>
 
                       <button
@@ -2465,15 +3091,35 @@ export default function App() {
                               : (language === 'de' ? 'Schulmodus deaktiviert' : 'Study mode disabled')
                           );
                         }}
-                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border transition duration-150 cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
                           isStudyModeActive 
-                            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 shadow-sm' 
-                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-350' : 'text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700')
+                            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 shadow-sm scale-[1.02]' 
+                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-emerald-500')
                         }`}
                       >
-                        <span className="text-xs">🎓</span>
+                        <GraduationCap className={`w-3.5 h-3.5 ${isStudyModeActive ? 'text-emerald-500' : 'text-emerald-400'}`} />
                         <span>{language === 'de' ? 'Schulmodus' : 'Study Mode'}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isStudyModeActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isStudyModeActive ? 'bg-emerald-500' : 'bg-slate-400/60'}`}></span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsLiquidGlassActive(!isLiquidGlassActive);
+                          triggerToast(
+                            !isLiquidGlassActive
+                              ? (language === 'de' ? '✨ Liquid Glass Verfolgung AKTIVIERT!' : '✨ Liquid Glass tracker ACTIVATED!')
+                              : (language === 'de' ? 'Liquid Glass Verfolgung deaktiviert.' : 'Liquid Glass tracker deactivated.')
+                          );
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
+                          isLiquidGlassActive 
+                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] scale-[1.02]' 
+                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-amber-500')
+                        }`}
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${isLiquidGlassActive ? 'text-amber-500 animate-pulse' : 'text-slate-400'}`} />
+                        <span>{language === 'de' ? 'Liquid Glass' : 'Liquid Glass'}</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isLiquidGlassActive ? 'bg-amber-500' : 'bg-slate-400/60'}`}></span>
                       </button>
                     </div>
 
@@ -2507,10 +3153,14 @@ export default function App() {
                       {/* Paperclip Button for file upload */}
                       <button
                         onClick={() => document.getElementById('aleksai-chat-file-uploader')?.click()}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition border ${darkMode ? 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300' : 'bg-white hover:bg-slate-100 border-[#e2e5f1] text-[#4a4e6a]'}`}
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                          darkMode 
+                            ? 'bg-slate-850 hover:text-[#4f6ef7] hover:bg-slate-800 border-slate-750 text-slate-300' 
+                            : 'bg-white hover:text-[#4f6ef7] hover:bg-slate-50 border-[#e2e5f1] text-[#4a4e6a]'
+                        }`}
                         title={language === 'de' ? 'Dateien oder Bilder anhängen' : 'Attach files or images'}
                       >
-                        <span className="text-sm">📎</span>
+                        <Paperclip className="w-4 h-4" />
                       </button>
 
                       {/* Image Generator Mode Toggle */}
@@ -2523,17 +3173,18 @@ export default function App() {
                               : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
                           );
                         }}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition border ${
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                           isImageGeneratorMode 
-                            ? 'bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 text-white border-transparent shadow-lg scale-105 animate-pulse' 
-                            : (darkMode ? 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300' : 'bg-white hover:bg-slate-100 border-[#e2e5f1] text-[#4a4e6a]')
+                            ? 'bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 text-white border-transparent shadow-lg scale-105' 
+                            : (darkMode ? 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300 hover:text-[#a855f7]' : 'bg-white hover:bg-slate-50 border-[#e2e5f1] text-[#4a4e6a] hover:text-[#a855f7]')
                         }`}
                         title={language === 'de' ? 'Bild erstellen' : 'Create image'}
                       >
-                        <span className="text-sm">🎨</span>
+                        <Image className="w-4 h-4" />
                       </button>
 
                       <textarea
+                        ref={chatInputRef}
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -2582,13 +3233,230 @@ export default function App() {
           </div>
         )}
 
+        {/* ── SCHULMODUS / EDUCATION LERNZENTRUM SCREEN ── */}
+        {currentPage === 'study' && (
+          <div className="max-w-4xl mx-auto px-4 py-8 md:py-12 flex-1 w-full animate-fade-in text-left">
+            {/* Header Banner */}
+            <div className={`p-6 md:p-8 rounded-3xl border mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${darkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-800' : 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white border-emerald-500/20'}`}>
+              <div>
+                <span className="text-[10px] font-black tracking-widest text-emerald-500 uppercase">
+                  🎓 AleksAI Premium Schulmodus
+                </span>
+                <h1 className={`text-2xl md:text-3xl font-black mt-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                  🧑🏽‍🏫 Lernzentrum & Hausaufgaben-Helfer
+                </h1>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  {language === 'de' 
+                    ? 'Klassische Lernunterstützung, verständliche Erklärungen für Mathe, Physik und Sprachen mit pädagogischer Geduld.'
+                    : 'Study aid, easy explanatory models for stem, history and language learning with pedagogical assistance.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Sub-tools row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Educational Helper Prompt Panel */}
+              <div className={`md:col-span-1 p-5 rounded-2xl border h-fit space-y-4 ${darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-[#e2e5f1] shadow-sm'}`}>
+                <h3 className={`text-sm font-black uppercase tracking-wider ${darkMode ? 'text-white' : 'text-slate-900'}`}>
+                  🧠 {language === 'de' ? 'Fach auswählen' : 'Select Subject'}
+                </h3>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {['Mathe', 'Physik', 'Deutsch', 'Englisch', 'Chemie', 'Geschichte'].map((sub) => (
+                    <button
+                      key={sub}
+                      onClick={() => setStudySubject(sub)}
+                      className={`py-2 px-3 text-[11px] font-black rounded-xl border transition ${
+                        studySubject === sub 
+                          ? 'bg-emerald-500 text-white border-emerald-600 shadow-md' 
+                          : (darkMode ? 'bg-slate-850/60 border-slate-750 text-slate-300 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100')
+                      } cursor-pointer`}
+                    >
+                      {sub === 'Mathe' ? '📐 Mathe' : sub === 'Physik' ? '🔬 Physik' : sub === 'Deutsch' ? '✍️ Deutsch' : sub === 'Englisch' ? '🇬🇧 Englisch' : sub === 'Chemie' ? '🧪 Chemie' : '📜 Geschichte'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                    {language === 'de' ? `Dein Problem in ${studySubject}` : `Your Question in ${studySubject}`}
+                  </label>
+                  <textarea
+                    value={studyInput}
+                    onChange={(e) => setStudyInput(e.target.value)}
+                    rows={4}
+                    placeholder={
+                      studySubject === 'Mathe' 
+                        ? 'z. B. Erkläre mir quadratische Gleichungen verständlich mit Beispielen.'
+                        : studySubject === 'Physik' 
+                          ? 'z. B. Wie funktionieren die Newtonschen Gesetze anschaulich?'
+                          : 'Beschreibe dein Thema oder füge deine Aufgabe hier ein...'
+                    }
+                    className={`w-full px-3 py-2 text-xs rounded-xl border transition-all resize-none ${darkMode ? 'bg-slate-850 border-slate-755 text-slate-100 placeholder-slate-600 focus:border-emerald-500 outline-none' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#0d0f1a]'}`}
+                  />
+
+                  <button
+                    onClick={async () => {
+                      if (!studyInput.trim()) {
+                        triggerToast(language === 'de' ? 'Bitte gib eine Fragestellung an' : 'Please provide a prompt');
+                        return;
+                      }
+                      
+                      setIsStudyLoading(true);
+                      setStudyResult('');
+                      triggerToast(language === 'de' ? '💡 AleksAI formuliert Lernunterstützung...' : '💡 Generating answer...');
+                      
+                      try {
+                        const explanatoryContext = `Du bist AleksAI Premium im pädagogisch wertvollsten Schulmodus. Erkläre dem Schüler das Thema "${studySubject}" so anschaulich, motivierend und einfach wie möglich auf Deutsch. Verwende übersichtliche Punkte, verständliche Schritte und ein konkretes Anwendungsbeispiel. Stelle am Schluss eine kleine Kontrollfrage zum Mitdenken! Hier ist die Frage des Schülers: ${studyInput}`;
+                        
+                        const model = activeModel;
+                        const keyToUse = customApiKey || '';
+                        
+                        const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + (keyToUse || process.env.GEMINI_API_KEY || '');
+                        
+                        const response = await fetch(url, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            contents: [{ parts: [{ text: explanatoryContext }] }],
+                            generationConfig: { maxOutputTokens: 1000 }
+                          })
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error("HTTP error " + response.status);
+                        }
+                        
+                        const data = await response.json();
+                        const genText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                        
+                        setStudyResult(genText || "Keine Rückmeldung erhalten. Bitte überprüfe dein API-Guthaben.");
+                      } catch (err) {
+                        console.error(err);
+                        setStudyResult('Das konnte leider nicht beantwortet werden. Bitte vergewissere dich, dass deine Internetverbindung aktiv ist, oder füge deinen eigenen Gemini-API-Key unter Profil hinzu.');
+                      } finally {
+                        setIsStudyLoading(false);
+                      }
+                    }}
+                    disabled={isStudyLoading}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 font-black text-xs text-white py-2.5 rounded-xl transition duration-150 cursor-pointer text-center flex items-center justify-center gap-1"
+                  >
+                    {isStudyLoading ? '⏳ Denkt nach...' : '💡 Verständlich erklären!'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Study Area Explanation Result Board */}
+              <div className="md:col-span-2 space-y-4 text-left">
+                <div className={`p-5 rounded-2xl border min-h-[350px] flex flex-col justify-between ${darkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-[#e2e5f1] shadow-sm'}`}>
+                  <div>
+                    <div className="flex justify-between items-center pb-3 border-b border-stone-100 dark:border-slate-800 mb-3">
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded font-black uppercase tracking-wider">
+                        {studySubject} - {language === 'de' ? 'Tafelbild' : 'Blackboard'}
+                      </span>
+                      {studyResult && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(studyResult);
+                            triggerToast(language === 'de' ? '📋 Kopiert!' : '📋 Copied!');
+                          }}
+                          className="text-xs text-emerald-500 hover:underline cursor-pointer"
+                        >
+                          📋 Kopieren
+                        </button>
+                      )}
+                    </div>
+
+                    {isStudyLoading ? (
+                      <div className="flex flex-col items-center justify-center py-16 space-y-3">
+                        <div className="w-8 h-8 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
+                        <span className="text-xs text-slate-400 font-bold">{language === 'de' ? 'AleksAI schreibt an der Wandtafel...' : 'AleksAI is generating...'}</span>
+                      </div>
+                    ) : studyResult ? (
+                      <div className="text-xs md:text-sm leading-relaxed text-left font-normal select-text space-y-2 whitespace-pre-wrap select-text">
+                        {studyResult}
+                      </div>
+                    ) : (
+                      <div className="text-center py-16 text-slate-500 space-y-2">
+                        <p className="font-extrabold text-2xl">⚡</p>
+                        <p className="text-xs font-bold leading-relaxed max-w-xs mx-auto">
+                          {language === 'de' 
+                            ? 'Wähle links ein Fach, stell deine Frage und AleksAI bereitet dir eine didaktisch verständliche Hilfestellung auf.'
+                            : 'Select a subject, write down your problem, and AleksAI will prepare easy-to-understand explanations.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Built-in quick helper sample */}
+                  <div className="border-t border-stone-100 dark:border-slate-800 pt-3.5 mt-4 flex justify-between items-center text-[10.5px]">
+                    <span className="text-slate-450 font-bold">💡 {language === 'de' ? 'Lern-Tipp: Erstelle Eselsbrücken!' : 'Learn tip: Stagger study chunks!'}</span>
+                    <button
+                      onClick={() => {
+                        setStudyInput('Erstelle mir 5 schnelle Quiz-Karteikarten zu den wichtigsten physikalischen Krafteinheiten.');
+                        setStudySubject('Physik');
+                        triggerToast('Quiz-Beispiel geladen! Klicke jetzt auf erklären.');
+                      }}
+                      className="text-emerald-500 hover:underline font-extrabold cursor-pointer"
+                    >
+                      🔥 {language === 'de' ? 'Beispiel laden' : 'Try example'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── USER PROFILE VIEW SCREEN ── */}
         {currentPage === 'profile' && currentUser && (
           <div className="max-w-2xl mx-auto px-4 py-8 md:py-12 flex-1 w-full">
             <div className={`border rounded-2xl p-6 text-center shadow-sm ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#f7f8fc] border-[#e2e5f1]'}`}>
-              <div className="w-16 h-16 bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] text-white rounded-full flex items-center justify-center text-3xl font-black shadow-md mx-auto mb-3">
-                {currentUser.firstName[0].toUpperCase()}
+              {/* Profile Avatar with Photo Picker */}
+              <div 
+                className="relative group w-20 h-20 mx-auto mb-4 cursor-pointer" 
+                onClick={() => document.getElementById('aleksai-avatar-input')?.click()}
+                title="Profilbild hochladen / ändern"
+              >
+                {currentUser.profilePic ? (
+                  <img 
+                    src={currentUser.profilePic} 
+                    alt="User Profile" 
+                    className="w-20 h-20 rounded-full object-cover border-2 border-violet-500 shadow-md transition group-hover:brightness-75"
+                  />
+                ) : (
+                  <div className="w-20 h-20 bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] text-white rounded-full flex items-center justify-center text-4xl font-black shadow-md transition group-hover:brightness-90">
+                    {currentUser.firstName[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-slate-950/65 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <span className="text-[10px] text-white font-extrabold uppercase tracking-wide">Ändern</span>
+                </div>
               </div>
+              <input 
+                type="file" 
+                id="aleksai-avatar-input" 
+                accept="image/*" 
+                className="hidden" 
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (file.size > 2 * 1024 * 1024) {
+                      triggerToast('⚠️ Bild ist zu groß (Maximal 2MB)');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const base64 = reader.result as string;
+                      const updatedUser = { ...currentUser, profilePic: base64 };
+                      updateAndSaveUser(updatedUser);
+                      triggerToast('✨ Profilbild erfolgreich aktualisiert!');
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+
               <h2 className={`text-xl font-extrabold ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>{currentUser.firstName} {currentUser.lastName}</h2>
               <p className="text-xs text-[#4f6ef7] mt-1 font-black">@{currentUser.username}</p>
             </div>
@@ -2619,63 +3487,6 @@ export default function App() {
               <div className="flex justify-between items-center pt-1">
                 <span className="text-xs text-[#4a4e6a] font-bold">Mitglied seit</span>
                 <span className={`text-xs font-black ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>{currentUser.createdAt}</span>
-              </div>
-            </div>
-
-            {/* PERSONAL USER API KEY PANEL */}
-            <div className={`border rounded-2xl p-5 mt-4 space-y-3 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#f7f8fc] border-[#e2e5f1]'}`}>
-              <div className="flex justify-between items-center">
-                <span className={`text-xs font-black uppercase tracking-wider ${darkMode ? 'text-blue-400' : 'text-[#4f6ef7]'}`}>
-                  🔑 {language === 'de' ? 'Dein Gemini API-Schlüssel' : 'Your Gemini API Key'}
-                </span>
-                {customApiKey ? (
-                  <span className="text-[9.5px] bg-emerald-500/15 text-emerald-500 px-1.5 py-0.5 rounded font-black uppercase">
-                    Aktiv / Active
-                  </span>
-                ) : (
-                  <span className="text-[9.5px] bg-slate-500/15 text-slate-400 px-1.5 py-0.5 rounded font-black uppercase">
-                    {language === 'de' ? 'Inaktiv' : 'Inactive'}
-                  </span>
-                )}
-              </div>
-              
-              <p className="text-[10.5px] text-slate-400 leading-relaxed font-normal">
-                {language === 'de' 
-                  ? 'Füge deinen eigenen kostenlosen API-Schlüssel von Google AI Studio hinzu, um Überlastungen oder temporäre Quota-Meldungen endgültig zu umgehen.'
-                  : 'Add your own free Google AI Studio API key to bypass rate limits or shared congestion on your account.'}
-              </p>
-
-              <div className="relative">
-                <input
-                  type="password"
-                  value={customApiKey}
-                  placeholder="AIzaSy..."
-                  onChange={(e) => handleSaveCustomApiKey(e.target.value.trim())}
-                  className={`w-full px-3 py-2 text-xs rounded-xl border transition-all ${darkMode ? 'bg-slate-850 border-slate-750 text-slate-100 placeholder-slate-600 focus:border-blue-500' : 'bg-white border-[#e2e5f1] text-slate-850 placeholder-slate-400 focus:border-[#4f6ef7]'} focus:outline-none`}
-                />
-                {customApiKey && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSaveCustomApiKey('');
-                      triggerToast(language === 'de' ? 'API-Schlüssel gelöscht' : 'API Key removed');
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-red-500 hover:underline cursor-pointer"
-                  >
-                    {language === 'de' ? 'Löschen' : 'Clear'}
-                  </button>
-                )}
-              </div>
-              
-              <div className="text-[9.5px] font-bold">
-                <a 
-                  href="https://aistudio.google.com/app/apikey" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-[#4f6ef7] hover:underline flex items-center gap-1"
-                >
-                  🚀 {language === 'de' ? 'Kostenlosen API-Schlüssel erstellen' : 'Create a free Gemini API Key'}
-                </a>
               </div>
             </div>
 
@@ -3063,6 +3874,189 @@ export default function App() {
             >
               {t('guestBadge')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── POST-REGISTRATION SURVEY MODAL ── */}
+      {showSurveyModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className={`rounded-3xl w-full max-w-[460px] p-7 relative shadow-2xl overflow-hidden animate-zoom-in ${
+            darkMode ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white text-slate-950 border border-stone-200'
+          }`}>
+            
+            {/* Skip Option in Top-Right Corner */}
+            <button 
+              onClick={() => {
+                setShowSurveyModal(false);
+                triggerToast(language === 'de' ? 'Umfrage übersprungen. Viel Spaß mit AleksAI!' : 'Survey skipped. Have fun with AleksAI!');
+              }}
+              className="absolute top-5 right-5 px-3 py-1 text-xs font-bold rounded-lg bg-stone-100 dark:bg-slate-800 hover:bg-stone-200 dark:hover:bg-slate-700 transition cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-white"
+            >
+              {language === 'de' ? 'Überspringen ✕' : 'Skip ✕'}
+            </button>
+
+            {/* Header */}
+            <div className="mb-6 text-left">
+              <span className="text-[10px] font-black uppercase text-[#4f6ef7] tracking-widest block mb-1">
+                {language === 'de' ? '⚡ Personalisierung' : '⚡ Personalization'}
+              </span>
+              <h3 className="text-lg font-black tracking-tight">
+                {language === 'de' ? 'Unterstütze AleksAI' : 'Support AleksAI'}
+              </h3>
+              <div className="w-12 h-1 bg-[#4f6ef7] rounded-full mt-2" />
+            </div>
+
+            {/* Step Content */}
+            <div className="space-y-5">
+              {surveyStep === 1 && (
+                <div className="space-y-3 text-left">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    {language === 'de' ? 'Frage 1 von 3: Wer bist du?' : 'Question 1 of 3: Who are you?'}
+                  </p>
+                  <p className="text-sm font-semibold mb-2">
+                    {language === 'de' ? 'Welche Rolle beschreibt dich am besten?' : 'Which role describes you best?'}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {[
+                      { key: 'student', label: 'Schüler / Student 🎒', desc: 'Lerne mit dem Hausaufgaben- & Schulassistenten' },
+                      { key: 'teacher', label: 'Lehrer / Dozent 👨‍🏫', desc: 'Erstelle Lehrmaterialien und Aufgaben' },
+                      { key: 'developer', label: 'Entwickler / Tech-Pro 💻', desc: 'Programmiere interaktive Apps im Studio' },
+                      { key: 'hobbyist', label: 'Hobbyist / Entdecker 🎨', desc: 'Gestalte kreative Welten auf eigene Faust' }
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => {
+                          setSurveyAnswers(prev => ({ ...prev, role: opt.key }));
+                          setSurveyStep(2);
+                        }}
+                        className={`p-3 text-left rounded-xl border text-xs font-bold flex flex-col transition cursor-pointer ${
+                          surveyAnswers.role === opt.key 
+                            ? 'border-violet-500 bg-violet-600/15' 
+                            : (darkMode ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300' : 'bg-stone-50 border-stone-200 hover:bg-stone-100 text-slate-800')
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] font-normal opacity-60 mt-0.5">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {surveyStep === 2 && (
+                <div className="space-y-3 text-left">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    {language === 'de' ? 'Frage 2 von 3: Hauptinteresse' : 'Question 2 of 3: Main Interest'}
+                  </p>
+                  <p className="text-sm font-semibold mb-2">
+                    {language === 'de' ? 'Was möchtest du hauptsächlich mit AleksAI tun?' : 'What do you mainly want to do with AleksAI?'}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {[
+                      { key: 'learning', label: 'Hausaufgaben & Schule 📚', desc: 'Effektive Lernbegleitung und Erklärungen' },
+                      { key: 'building', label: 'Apps & Spiele entwickeln 🤖', desc: 'AleksAI Studio AI-Builder ausreizen' },
+                      { key: 'copilot', label: 'Allgemeiner Co-Pilot 🧠', desc: 'Allround-Unterstützung für den Alltag' }
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => {
+                          setSurveyAnswers(prev => ({ ...prev, interest: opt.key }));
+                          setSurveyStep(3);
+                        }}
+                        className={`p-3 text-left rounded-xl border text-xs font-bold flex flex-col transition cursor-pointer ${
+                          surveyAnswers.interest === opt.key 
+                            ? 'border-violet-500 bg-violet-600/15' 
+                            : (darkMode ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300' : 'bg-stone-50 border-stone-200 hover:bg-stone-100 text-slate-800')
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] font-normal opacity-60 mt-0.5">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {surveyStep === 3 && (
+                <div className="space-y-3 text-left">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    {language === 'de' ? 'Frage 3 von 3: Vorwissen' : 'Question 3 of 3: Experience'}
+                  </p>
+                  <p className="text-sm font-semibold mb-2">
+                    {language === 'de' ? 'Wie gut kennst du dich mit Künstlicher Intelligenz aus?' : 'How well do you know Artificial Intelligence?'}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {[
+                      { key: 'beginner', label: 'Anfänger 🌟', desc: 'Will Erste Schritte gehen & experimentieren' },
+                      { key: 'intermediate', label: 'Fortgeschritten 🚀', desc: 'Kennt Prompts & gängige AI Chatbots bereits' },
+                      { key: 'expert', label: 'Experte 👑', desc: 'Möchte komplexe Prompts & Programmier-Synthese' }
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => {
+                          setSurveyAnswers(prev => ({ ...prev, experience: opt.key }));
+                        }}
+                        className={`p-3 text-left rounded-xl border text-xs font-bold flex flex-col transition cursor-pointer ${
+                          surveyAnswers.experience === opt.key 
+                            ? 'border-emerald-500 bg-emerald-600/15' 
+                            : (darkMode ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300' : 'bg-stone-50 border-stone-200 hover:bg-stone-100 text-slate-800')
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[10px] font-normal opacity-60 mt-0.5">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Bottom Controls */}
+            <div className="flex justify-between items-center mt-8 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                disabled={surveyStep === 1}
+                onClick={() => setSurveyStep(prev => prev - 1)}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  surveyStep === 1 
+                    ? 'opacity-40 cursor-not-allowed text-stone-400' 
+                    : 'bg-[#f4f4f7] dark:bg-slate-800 hover:bg-[#e2e5f1] dark:hover:bg-slate-755 text-slate-500 dark:text-slate-300'
+                }`}
+              >
+                {language === 'de' ? 'Zurück' : 'Back'}
+              </button>
+
+              {surveyStep < 3 ? (
+                <button
+                  onClick={() => {
+                    const currentKeys = ['role', 'interest'];
+                    const currentKey = currentKeys[surveyStep - 1];
+                    if (!surveyAnswers[currentKey]) {
+                      const fallback = currentKey === 'role' ? 'student' : 'learning';
+                      setSurveyAnswers(prev => ({ ...prev, [currentKey]: fallback }));
+                    }
+                    setSurveyStep(prev => prev + 1);
+                  }}
+                  className="px-5 py-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 rounded-lg shadow-md transition cursor-pointer"
+                >
+                  {language === 'de' ? 'Weiter' : 'Next'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (!surveyAnswers.experience) {
+                      setSurveyAnswers(prev => ({ ...prev, experience: 'beginner' }));
+                    }
+                    setShowSurveyModal(false);
+                    triggerToast(language === 'de' ? '🎉 Danke! Dein Erlebnis wurde personalisiert.' : '🎉 Thanks! Your experience has been personalized.');
+                  }}
+                  className="px-5 py-2 text-xs font-bold text-white bg-[#10b981] hover:bg-[#059669] rounded-lg shadow-md transition cursor-pointer animate-pulse"
+                >
+                  {language === 'de' ? 'Fertigstellen ✨' : 'Finish ✨'}
+                </button>
+              )}
+            </div>
+
           </div>
         </div>
       )}
@@ -4050,6 +5044,25 @@ export default function App() {
         );
       })()}
 
+      {/* 🔮 SLICK FLOATING SIDEPANEL TRIGGER BUTTON */}
+      {!sidebarActive && (
+        <button
+          onClick={toggleSidebar}
+          className={`fixed top-1/2 left-3 -translate-y-1/2 w-9 h-9 rounded-xl flex items-center justify-center border z-50 cursor-pointer shadow-lg transition-all duration-300 hover:scale-110 ${
+            darkMode 
+              ? 'bg-slate-900/95 border-slate-800 text-violet-400 hover:text-violet-300 shadow-[0_0_15px_rgba(139,92,246,0.25)]' 
+              : 'bg-white/95 border-slate-200 text-[#4f6ef7] hover:text-blue-600 shadow-md'
+          }`}
+          title={language === 'de' ? 'Menü öffnen' : 'Open Menu'}
+        >
+          {currentUser ? (
+            <MoreHorizontal className="w-5 h-5 animate-pulse" />
+          ) : (
+            <Lock className="w-4 h-4 text-amber-500 animate-bounce" />
+          )}
+        </button>
+      )}
+
       {/* ── SUCCESS / ERROR APP TOAST POPUP ── */}
       {showToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-white px-5 py-3 rounded-2xl text-xs md:text-sm font-bold z-55 shadow-2xl flex items-center gap-2 animate-[pulse_1.5s_infinite]">
@@ -4184,27 +5197,69 @@ function AleksAILogo({ className = "w-6 h-6", glow = false }: { className?: stri
 }
 
 // Customized logo component for each specific model using the custom design shapes
-export function ModelLogo({ model, className = "w-5 h-5", glow = false }: { model: AIModel, className?: string, glow?: boolean }) {
-  if (model === AIModel.NANO_BANANA) {
-    return <span className={`inline-flex items-center justify-center text-sm ${className}`} style={{ minWidth: '1.25rem', minHeight: '1.25rem' }}>🍌</span>;
-  }
-
-  let colorClass = "text-[#4f6ef7]"; // Default
-  if (model === AIModel.GEMINI) {
-    colorClass = "text-blue-500";
-  } else if (model === AIModel.LLAMA_SCOUT) {
-    colorClass = "text-purple-500";
-  } else if (model === AIModel.OPENAI) {
-    colorClass = "text-emerald-500";
-  } else if (model === AIModel.DEEPSEEK) {
-    colorClass = "text-cyan-500";
-  } else if (model === AIModel.CLAUDE) {
-    colorClass = "text-orange-500";
-  } else if (model === AIModel.LLAMA_ULTRA) {
-    colorClass = "text-pink-500";
+export function ModelLogo({ model, className = "w-5 h-5", glow = false, color }: { model: AIModel, className?: string, glow?: boolean, color?: string }) {
+  let colorClass = color || "text-[#4f6ef7]"; // Default
+  if (!color) {
+    if (model === AIModel.GEMINI) {
+      colorClass = "text-blue-500";
+    } else if (model === AIModel.LLAMA_SCOUT) {
+      colorClass = "text-purple-500";
+    } else if (model === AIModel.OPENAI) {
+      colorClass = "text-emerald-500";
+    } else if (model === AIModel.DEEPSEEK) {
+      colorClass = "text-cyan-500";
+    } else if (model === AIModel.CLAUDE) {
+      colorClass = "text-orange-500";
+    } else if (model === AIModel.LLAMA_ULTRA) {
+      colorClass = "text-pink-500";
+    } else if (model === AIModel.NANO_BANANA) {
+      colorClass = "text-amber-500";
+    }
   }
 
   return (
     <AleksAILogo className={`${className} ${colorClass}`} glow={glow} />
+  );
+}
+
+// Emulates a high-speed character-by-character typewriter animation for incoming AI replies (ChatGPT style)
+export function TypewriterParagraph({ key, content, isLatest, darkMode, idx }: { key?: any; content: string; isLatest: boolean; darkMode: boolean; idx: number }) {
+  const [displayedText, setDisplayedText] = useState(isLatest ? "" : content);
+
+  useEffect(() => {
+    if (!isLatest) {
+      setDisplayedText(content);
+      return;
+    }
+
+    let i = 0;
+    const timer = setInterval(() => {
+      i += 3; // Rapid 3-char increments for snappy responsive feel
+      if (i >= content.length) {
+        setDisplayedText(content);
+        clearInterval(timer);
+      } else {
+        setDisplayedText(content.slice(0, i));
+      }
+    }, 12);
+
+    return () => clearInterval(timer);
+  }, [content, isLatest]);
+
+  const parts = displayedText.split(/(\*\*.*?\*\*)/g);
+  const formattedInline = parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className={`font-bold ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+
+  return (
+    <p key={idx} className={`text-[15px] leading-relaxed whitespace-pre-wrap ${darkMode ? 'text-slate-100' : 'text-[#0d0f1a]'}`}>
+      {formattedInline}
+      {isLatest && displayedText.length < content.length && (
+        <span className="inline-block w-1.5 h-4 bg-blue-500 animate-pulse ml-1 align-middle">|</span>
+      )}
+    </p>
   );
 }

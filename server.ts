@@ -40,6 +40,8 @@ function getAIClient(customApiKey?: string): GoogleGenAI {
   });
 }
 
+
+
 app.post('/api/chat', async (req: express.Request, res: express.Response) => {
   const { messages, model, generateImage, webSearch, studyMode } = req.body;
   const customApiKeyHeader = req.headers['x-custom-api-key'] || req.headers['X-Custom-API-Key'] || req.headers['x-custom-api-key-header'];
@@ -137,10 +139,10 @@ Du antwortest standardmäßig immer auf Deutsch.`;
     } else if (normalizedModel === 'claude-3-5') {
       systemInstruction = 'Du bist AleksAI buissnis (Claude 3.5 Sonnet von Anthropic). Du schreibst mit exzellenter deutscher Sprache, sehr eloquent, nuanciert, präzise und nimmst dir Zeit für elegante Details. Antworte auf Deutsch.';
     } else if (normalizedModel === 'llama-3-ultra') {
-      systemInstruction = 'Du bist AleksAI Ultra (Llama 3.3 von Meta). Du bist Metas hochentwickeltes Allround-Modell für tiefgehende Analysen, kreative Ausarbeitungen, präzises Formulieren und anspruchsvolle Diskussionen. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Max (Llama 3.3 von Meta). Du bist Metas hochentwickeltes Allround-Modell für tiefgehende Analysen, kreative Ausarbeitungen, präzises Formulieren und anspruchsvolle Diskussionen. Antworte auf Deutsch.';
     } else {
       // Default / Gemini
-      systemInstruction = 'Du bist AleksAI Max (Gemini 3.5 Flash, entwickelt von Google). Du bist AleksAIs intelligentes Standard-Modell mit herausragenden Fähigkeiten. Du bist freundlich, kreativ, sehr sachkundig und hilfst bei jeder Art von Problemstellung. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Ultra (Gemini 3.5 Flash, entwickelt von Google). Du bist AleksAIs intelligentes Standard-Modell mit herausragenden Fähigkeiten. Du bist freundlich, kreativ, sehr sachkundig und hilfst bei jeder Art von Problemstellung. Antworte auf Deutsch.';
     }
 
     // Append dynamic date and year context so the AI is aware that it is currently 2026

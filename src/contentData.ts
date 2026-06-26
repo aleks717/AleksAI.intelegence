@@ -86,13 +86,13 @@ export const FAQ_DATA: FAQItem[] = [
       sr: "Koji AI model je najbolji za moj zadatak?"
     },
     answer: {
-      de: "Nutze AleksAI Max (Gemini) für kreative Texte und multimodale Aufgaben, AleksAI Pro (GPT-4o) für schnelle, logische Antworten, AleksAI neo (Llama) für prägnante, direkte Chats, AleksAI Ultra (Meta Llama) für extrem anspruchsvolle tiefgehende Analysen und AleksAI buissnis (Claude) für exzellenten Code und lange Dokumente.",
-      en: "Use AleksAI Max (Gemini) for creative writing and multimodal work, AleksAI Pro (GPT-4o) for fast, logical answers, AleksAI neo (Llama) for concise responses, AleksAI Ultra (Meta Llama) for incredibly deep logical reasoning, and AleksAI buissnis (Claude) for peak performance coding and brilliant language understanding.",
-      es: "Usa AleksAI Max (Gemini) para redacción creativa, AleksAI Pro (GPT-4o) para respuestas rápidas y lógicas, AleksAI neo (Llama) para chats directos y breves, AleksAI Ultra (Meta Llama) para razonamiento lógico profundo und AleksAI buissnis (Claude) para desarrollo de código excelente.",
-      fr: "Utilisez AleksAI Max (Gemini) pour la rédaction créative, AleksAI Pro (GPT-4o) pour des réponses logiques et ultra-rapides, AleksAI neo (Llama) pour des discussions directes, AleksAI Ultra (Meta Llama) pour des analyses de logique complexes, et AleksAI buissnis (Claude) pour un codage de haut niveau.",
-      it: "Usa AleksAI Max (Gemini) per testi creativi, AleksAI Pro (GPT-4o) per risposte logiche e veloci, AleksAI neo (Llama) per conversazioni coincise, AleksAI Ultra (Meta Llama) per riflessioni logiche profonde, e AleksAI buissnis (Claude) per codice eccellente.",
-      tr: "Yaratıcı metinler ve görseller için AleksAI Max (Gemini), hızlı ve mantıklı yanıtlar için AleksAI Pro (GPT-4o), doğrudan sohbetler için AleksAI neo (Llama), derinlemesine analiz için AleksAI Ultra (Meta Llama) ve yazılım geliştirme & kod yazma için AleksAI buissnis (Claude) modelini kullanın.",
-      sr: "Koristite AleksAI Max (Gemini) za kreativno pisanje, AleksAI Pro (GPT-4o) za brze i logične odgovore, AleksAI neo (Llama) za koncizne razgovore, AleksAI Ultra (Meta Llama) za duboko logičko razmišljanje, a AleksAI buissnis (Claude) za vrhunsko programiranje i dugačke analize."
+      de: "Nutze AleksAI Ultra (Gemini) für kreative Texte und multimodale Aufgaben, AleksAI Pro (GPT-4o) für schnelle, logische Antworten, AleksAI neo (Llama) für prägnante, direkte Chats, AleksAI Max (Meta Llama) für extrem anspruchsvolle tiefgehende Analysen und AleksAI Business (Claude) für exzellenten Code und lange Dokumente.",
+      en: "Use AleksAI Ultra (Gemini) for creative writing and multimodal work, AleksAI Pro (GPT-4o) for fast, logical answers, AleksAI neo (Llama) for concise responses, AleksAI Max (Meta Llama) for incredibly deep logical reasoning, and AleksAI Business (Claude) for peak performance coding and brilliant language understanding.",
+      es: "Usa AleksAI Ultra (Gemini) para redacción creativa, AleksAI Pro (GPT-4o) para respuestas rápidas y lógicas, AleksAI neo (Llama) para chats directos y breves, AleksAI Max (Meta Llama) para razonamiento lógico profundo und AleksAI Business (Claude) para desarrollo de código excelente.",
+      fr: "Utilisez AleksAI Ultra (Gemini) pour la rédaction créative, AleksAI Pro (GPT-4o) pour des réponses logiques et ultra-rapides, AleksAI neo (Llama) pour des discussions directes, AleksAI Max (Meta Llama) pour des analyses de logique complexes, et AleksAI Business (Claude) pour un codage de haut niveau.",
+      it: "Usa AleksAI Ultra (Gemini) per testi creativi, AleksAI Pro (GPT-4o) per risposte logiche e veloci, AleksAI neo (Llama) per conversazioni coincise, AleksAI Max (Meta Llama) per riflessioni logiche profonde, e AleksAI Business (Claude) per codice eccellente.",
+      tr: "Yaratıcı metinler ve görseller için AleksAI Ultra (Gemini), hızlı ve mantıklı yanıtlar için AleksAI Pro (GPT-4o), doğrudan sohbetler için AleksAI neo (Llama), derinlemesine analiz için AleksAI Max (Meta Llama) ve yazılım geliştirme & kod yazma için AleksAI Business (Claude) modelini kullanın.",
+      sr: "Koristite AleksAI Ultra (Gemini) za kreativno pisanje, AleksAI Pro (GPT-4o) za brze i logične odgovore, AleksAI neo (Llama) za koncizne razgovore, AleksAI Max (Meta Llama) za duboko logičko razmišljanje, a AleksAI Business (Claude) za vrhunsko programiranje i dugačke analize."
     }
   },
   {
@@ -144,8 +144,8 @@ export const INITIAL_REVIEWS: Review[] = [
     id: "rev-1",
     name: "Max M.",
     rating: 5,
-    text: "Die Performance hier schlägt alles! Dass ich AleksAI Max (Gemini) und AleksAI buissnis (Claude) vollkommen kostenfrei und ohne nerviges Abo nutzen kann, ist eine absolute Revolution. Beste Seite!",
-    model: "AleksAI Max",
+    text: "Die Performance hier schlägt alles! Dass ich AleksAI Ultra (Gemini) und AleksAI Business (Claude) vollkommen kostenfrei und ohne nerviges Abo nutzen kann, ist eine absolute Revolution. Beste Seite!",
+    model: "AleksAI Ultra",
     date: "12.06.2026"
   },
   {
@@ -160,8 +160,8 @@ export const INITIAL_REVIEWS: Review[] = [
     id: "rev-3",
     name: "Alex S.",
     rating: 4,
-    text: "Gute Modellauswahl. AleksAI Ultra (Meta Llama) löst komplexe Logikfragen erstaunlich gründlich. Die Ladezeiten im Chat sind super.",
-    model: "AleksAI Ultra",
+    text: "Gute Modellauswahl. AleksAI Max (Meta Llama) löst komplexe Logikfragen erstaunlich gründlich. Die Ladezeiten im Chat sind super.",
+    model: "AleksAI Max",
     date: "08.06.2026"
   },
   {
