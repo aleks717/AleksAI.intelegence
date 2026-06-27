@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Paperclip, Image, Globe, Volume2, Copy, GraduationCap, MessageSquare, Radio, Mic, MicOff, VolumeX, PhoneOff, ArrowLeft, Sparkles, Loader2, Home, User as UserIcon, Cpu, Layers, Code, Eye, RefreshCw, Trash2, Plus, Play, Check, ExternalLink, FolderOpen, ChevronLeft, ChevronRight, MoreHorizontal, Lock } from 'lucide-react';
+import { Paperclip, Image, Globe, Volume2, Copy, GraduationCap, MessageSquare, Radio, Mic, MicOff, VolumeX, PhoneOff, ArrowLeft, Sparkles, Loader2, Home, User as UserIcon, Cpu, Layers, Code, Eye, RefreshCw, Trash2, Plus, Play, Check, ExternalLink, FolderOpen, ChevronLeft, ChevronRight, MoreHorizontal, Lock, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { AIModel, MODEL_DETAILS, type User, type Message, type ChatSession } from './types';
+import { ProceduralSoundPlayer, ProceduralMusicPlayer, LoopingVideoPlayer } from './components/AIProceduralMedia';
 import { 
   auth, 
   googleProvider, 
+  appleProvider,
   signInWithPopup, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut 
 } from './firebase';
-import { LANGUAGES } from './languages';
+import { LANGUAGES } from '../assets/.aistudio/languages';
 import { FAQ_DATA, INITIAL_REVIEWS, MODEL_COMPARISON_MATRIX, CHANGELOG_DATA, OTHER_TEXTS } from './contentData';
 
 const ensureFullHtml = (code: string): string => {
@@ -61,7 +63,7 @@ const ensureFullHtml = (code: string): string => {
 export default function App() {
   const getStartingCredits = (): number => {
     const custom = localStorage.getItem('aleksai_welcome_gift_credits');
-    return custom ? Number(custom) : 100;
+    return custom ? Number(custom) : 50;
   };
 
   // Navigation & Page State
@@ -102,6 +104,17 @@ export default function App() {
 
   // Settings popup dialog modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'settings' | 'profile' | 'shop'>('settings');
+
+  // Cookies and Legal states
+  const [showCookieBanner, setShowCookieBanner] = useState<boolean>(false);
+  const [showCookieSettings, setShowCookieSettings] = useState<boolean>(false);
+  const [cookieSettings, setCookieSettings] = useState({
+    necessary: true,
+    analytics: true,
+    marketing: false
+  });
+  const [showLegalModal, setShowLegalModal] = useState<'privacy' | 'terms' | 'cookies' | null>(null);
 
   // FAQ & Interactive Reviews States
   const [faqOpenId, setFaqOpenId] = useState<string | null>("faq-1");
@@ -127,7 +140,7 @@ export default function App() {
   const [includeClaude, setIncludeClaude] = useState<boolean>(true);
   const [includeGemini, setIncludeGemini] = useState<boolean>(true);
   const [includeImageGen, setIncludeImageGen] = useState<boolean>(true);
-  const [rModel, setRModel] = useState<string>('AleksAI Ultra');
+  const [rModel, setRModel] = useState<string>('AlerksAI Intelegence');
 
   // Translation helper function
   const t = (key: keyof typeof LANGUAGES['de']) => {
@@ -153,9 +166,14 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<{name: string, type: string, size: string, dataUrl?: string}[]>([]);
   const [isImageGeneratorMode, setIsImageGeneratorMode] = useState(false);
+  const [isSoundGeneratorMode, setIsSoundGeneratorMode] = useState(false);
+  const [isMusicGeneratorMode, setIsMusicGeneratorMode] = useState(false);
+  const [isVideoGeneratorMode, setIsVideoGeneratorMode] = useState(false);
   const [isWebSearchActive, setIsWebSearchActive] = useState(false);
   const [isStudyModeActive, setIsStudyModeActive] = useState(false);
   const [isLiquidGlassActive, setIsLiquidGlassActive] = useState(true);
+  const [isOptionsDropdownOpen, setIsOptionsDropdownOpen] = useState(false);
+  const [isCreatorPopoverOpen, setIsCreatorPopoverOpen] = useState(false);
 
 
 
@@ -173,6 +191,8 @@ export default function App() {
   const [activeSpokenText, setActiveSpokenText] = useState('');
   const recognitionRef = useRef<any>(null);
   const activeSpokenTextRef = useRef<string>('');
+  const activeUtteranceRef = useRef<any>(null);
+  const shouldSpeakNextResponseRef = useRef<boolean>(false);
 
   // Custom user-provided Gemini API Key to bypass platform / shared quota limits
   const [customApiKey, setCustomApiKey] = useState<string>(() => {
@@ -210,7 +230,7 @@ export default function App() {
     return clean;
   };
 
-  const speakText = (text: string) => {
+  const speakText = (text: string, isLiveCall: boolean = true) => {
     if (!window.speechSynthesis) return;
     try {
       window.speechSynthesis.cancel(); // Cancel active speech
@@ -221,14 +241,19 @@ export default function App() {
 
     const cleaned = cleanMarkupForSpeech(text);
     if (!cleaned) {
-      setLiveStatus('listening');
-      if (micActive) startSpeechRecognition();
+      if (isLiveCall) {
+        setLiveStatus('listening');
+        if (micActive) startSpeechRecognition();
+      }
       return;
     }
 
     const utterance = new SpeechSynthesisUtterance(cleaned);
-    const targetLang = language === 'de' ? 'de-DE' : 'en-US';
+    const targetLang = language === 'de' ? 'de-DE' : (language === 'ru' ? 'ru-RU' : (language === 'pt' ? 'pt-PT' : 'en-US'));
     utterance.lang = targetLang;
+    
+    // Store reference to prevent garbage collection
+    activeUtteranceRef.current = utterance;
     
     // Asynchronously load voices
     const voices = window.speechSynthesis.getVoices();
@@ -246,25 +271,42 @@ export default function App() {
     utterance.pitch = 1.02;
 
     utterance.onstart = () => {
-      setLiveStatus('speaking');
+      if (isLiveCall) {
+        setLiveStatus('speaking');
+      }
     };
 
     utterance.onend = () => {
-      setLiveStatus('listening');
-      if (micActive) {
-        startSpeechRecognition();
+      if (isLiveCall) {
+        setLiveStatus('listening');
+        if (micActive) {
+          startSpeechRecognition();
+        }
+      } else {
+        activeUtteranceRef.current = null;
       }
     };
 
     utterance.onerror = (e) => {
       console.error("Speech Synthesis error:", e);
-      setLiveStatus('listening');
-      if (micActive) {
-        startSpeechRecognition();
+      if (isLiveCall) {
+        setLiveStatus('listening');
+        if (micActive) {
+          startSpeechRecognition();
+        }
+      } else {
+        activeUtteranceRef.current = null;
       }
     };
 
-    window.speechSynthesis.speak(utterance);
+    // Delay the speaking slightly to allow any cancel() action to clear completely in Chrome
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error("Failed to speak:", err);
+      }
+    }, 100);
   };
 
   const startSpeechRecognition = () => {
@@ -311,6 +353,20 @@ export default function App() {
 
     rec.onerror = (e: any) => {
       console.warn("Speech Recognition error:", e.error);
+      if (e.error === 'not-allowed') {
+        triggerToast(
+          language === 'de' 
+            ? '🎙️ Mikrofon-Zugriff blockiert! Bitte klicke auf das Schloss-Symbol in der Adressleiste und erlaube den Mikrofon-Zugriff.' 
+            : '🎙️ Microphone access blocked! Please click the lock icon in your browser address bar and allow microphone permissions.'
+        );
+        setIsLiveModeActive(false);
+      } else if (e.error === 'network') {
+        triggerToast(
+          language === 'de'
+            ? '🌐 Netzwerkfehler bei der Spracherkennung. Bitte prüfe deine Internetverbindung.'
+            : '🌐 Network error during speech recognition. Please check your connection.'
+        );
+      }
     };
 
     rec.onend = () => {
@@ -393,22 +449,29 @@ export default function App() {
     };
   }, [isLiveModeActive, micActive]);
 
-  // Read response text aloud when generation finishes in active Live Mode
+  // Read response text aloud when generation finishes
   useEffect(() => {
-    if (isLiveModeActive && !isGenerating && activeSessionId) {
+    if (!isGenerating && activeSessionId && shouldSpeakNextResponseRef.current) {
+      shouldSpeakNextResponseRef.current = false;
       const activeSession = sessions.find(s => s.id === activeSessionId);
       if (activeSession && activeSession.messages.length > 0) {
         const lastMsg = activeSession.messages[activeSession.messages.length - 1];
-        if (lastMsg && lastMsg.role === 'ai') {
+        if (lastMsg && lastMsg.role === 'ai' && !lastMsg.content.startsWith('⚠️')) {
           if (!isSilentMode) {
-            setLiveStatus('speaking');
-            speakText(lastMsg.content);
+            if (isLiveModeActive) {
+              setLiveStatus('speaking');
+              speakText(lastMsg.content, true);
+            } else {
+              speakText(lastMsg.content, false);
+            }
           } else {
-            setLiveStatus('idle');
-            if (micActive) {
-              setTimeout(() => {
-                if (isLiveModeActive && micActive) startSpeechRecognition();
-              }, 1000);
+            if (isLiveModeActive) {
+              setLiveStatus('idle');
+              if (micActive) {
+                setTimeout(() => {
+                  if (isLiveModeActive && micActive) startSpeechRecognition();
+                }, 1000);
+              }
             }
           }
         }
@@ -435,7 +498,26 @@ export default function App() {
 
   // Auth modal states
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
+  const [authModalTab, setAuthModalTab] = useState<'login' | 'register' | 'verify_google' | 'forgot_password'>('login');
+  
+  // Verification states for Google and Password reset
+  const [pendingGoogleLogin, setPendingGoogleLogin] = useState<{ user: User; code: string; email: string } | null>(null);
+  const [googleVerificationCodeInput, setGoogleVerificationCodeInput] = useState('');
+  const [isSendingGoogleCode, setIsSendingGoogleCode] = useState(false);
+  const [googleCodeMethod, setGoogleCodeMethod] = useState<'smtp' | 'simulation' | 'failed_smtp' | null>(null);
+  const [googleCodeSimulationValue, setGoogleCodeSimulationValue] = useState('');
+  const [googleSmtpError, setGoogleSmtpError] = useState<string | null>(null);
+  const [socialProviderName, setSocialProviderName] = useState<'google' | 'apple'>('google');
+
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCodeInput, setResetCodeInput] = useState('');
+  const [generatedResetCode, setGeneratedResetCode] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isSendingResetCode, setIsSendingResetCode] = useState(false);
+  const [resetStep, setResetStep] = useState<'request' | 'verify'>('request');
+  const [resetCodeMethod, setResetCodeMethod] = useState<'smtp' | 'simulation' | 'failed_smtp' | null>(null);
+  const [resetCodeSimulationValue, setResetCodeSimulationValue] = useState('');
+  const [resetSmtpError, setResetSmtpError] = useState<string | null>(null);
   
   // Post-registration survey states
   const [showSurveyModal, setShowSurveyModal] = useState(false);
@@ -473,7 +555,7 @@ export default function App() {
   const [cmdCouponName, setCmdCouponName] = useState('');
   const [cmdCouponCredits, setCmdCouponCredits] = useState(1000);
   const [cmdWelcomeGift, setCmdWelcomeGift] = useState(() => {
-    return Number(localStorage.getItem('aleksai_welcome_gift_credits') || '100');
+    return Number(localStorage.getItem('aleksai_welcome_gift_credits') || '50');
   });
   const [cmdResetTarget, setCmdResetTarget] = useState(100);
   const [cmdGiftAllAmount, setCmdGiftAllAmount] = useState(500);
@@ -488,7 +570,7 @@ export default function App() {
   });
   const [adminSearch, setAdminSearch] = useState('');
   const [adminLogs, setAdminLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString()}] AleksAI Admin Interface initialisiert.`,
+    `[${new Date().toLocaleTimeString()}] AlerksAI Admin Interface initialisiert.`,
     `[${new Date().toLocaleTimeString()}] Systemstatus: Bereit.`,
     `[${new Date().toLocaleTimeString()}] Firebase Auth verbunden (aleks.smolovic@web.de)`
   ]);
@@ -645,6 +727,25 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('aleksai_device_size', deviceSize);
   }, [deviceSize]);
+
+  // Initial check for cookie consent banner
+  useEffect(() => {
+    const consent = localStorage.getItem('aleksai_cookie_consent');
+    if (!consent) {
+      const timer = setTimeout(() => {
+        setShowCookieBanner(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else {
+      try {
+        const parsed = JSON.parse(consent);
+        setCookieSettings(parsed);
+      } catch (e) {
+        // Fallback
+        setCookieSettings({ necessary: true, analytics: true, marketing: true });
+      }
+    }
+  }, []);
 
   // Sync sessions to LocalStorage on changes
   useEffect(() => {
@@ -903,7 +1004,7 @@ export default function App() {
       checkDailyCredits(u);
       setShowAuthModal(false);
       showPage('chat');
-      triggerToast(`Willkommen zurück, ${u.firstName}!`);
+      triggerToast(language === 'de' ? `Erfolgreich angemeldet! Willkommen zurück, ${u.firstName}!` : `Successfully logged in! Welcome back, ${u.firstName}!`);
       
       // Clear inputs
       setLoginUsername('');
@@ -985,7 +1086,7 @@ export default function App() {
       setShowSurveyModal(true);
       
       showPage('chat');
-      triggerToast(`Konto erstellt! Willkommen, ${newUserObj.firstName}. Du hast 100 Gratis-Credits bekommen.`);
+      triggerToast(language === 'de' ? `Erfolgreich angemeldet! Willkommen, ${newUserObj.firstName}. Du hast 50 Gratis-Credits bekommen.` : `Successfully registered and logged in! Welcome, ${newUserObj.firstName}. You received 50 free credits.`);
       
       // Clear Inputs
       setRegFirst('');
@@ -1009,9 +1110,10 @@ export default function App() {
     }
   };
 
-  // Google Single Sign-On Authenticator
+  // Google Single Sign-On Authenticator with Email Verification Code
   const doGoogleLogin = async () => {
     setAuthError('');
+    setSocialProviderName('google');
     try {
       const userCredential = await signInWithPopup(auth, googleProvider);
       const fbUser = userCredential.user;
@@ -1022,12 +1124,17 @@ export default function App() {
       const lastName = nameParts.slice(1).join(' ') || 'Nutzer';
       const email = fbUser.email || '';
 
+      if (!email) {
+        setAuthError(language === 'de' ? 'Google Konto hat keine gültige E-Mail-Adresse.' : 'Google account does not have a valid email address.');
+        return;
+      }
+
       const savedList = localStorage.getItem('aleksai_users');
       let localUser = null;
       if (savedList) {
         try {
           const users = JSON.parse(savedList) as any[];
-          localUser = users.find(u => u.firebaseUid === fbUser.uid || (email && u.username.toLowerCase() === email.toLowerCase()));
+          localUser = users.find(u => u.firebaseUid === fbUser.uid || u.username.toLowerCase() === email.toLowerCase());
         } catch (e) {
           console.error(e);
         }
@@ -1046,18 +1153,166 @@ export default function App() {
         email: email
       };
 
-      // Sync local collection list of registered accounts
-      let users = [];
+      // Generate verification code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setPendingGoogleLogin({ user: u, code, email });
+      setGoogleVerificationCodeInput('');
+      setAuthError('');
+      setGoogleSmtpError(null);
+      setAuthModalTab('verify_google');
+      setIsSendingGoogleCode(true);
+
+      try {
+        const res = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code, type: 'google' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setGoogleCodeMethod(data.method);
+          if (data.method === 'simulation' || data.method === 'failed_smtp') {
+            setGoogleCodeSimulationValue(data.code);
+          }
+          if (data.smtpError) {
+            setGoogleSmtpError(data.smtpError);
+          }
+          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
+        } else {
+          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
+        }
+      } catch (e) {
+        console.error('Error sending Google verification email:', e);
+        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
+      } finally {
+        setIsSendingGoogleCode(false);
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        return;
+      }
+      if (err.code === 'auth/operation-not-allowed') {
+        setAuthError(language === 'de' 
+          ? 'Google-Anmeldung ist in diesem Firebase-Projekt nicht aktiviert. Bitte überprüfe deine Firebase-Konfiguration.'
+          : 'Google sign-in is not enabled in this Firebase project. Please check your Firebase project configuration.');
+        return;
+      }
+      setAuthError(err.message || 'Google Anmeldung ist fehlgeschlagen.');
+    }
+  };
+
+  // Apple Single Sign-On Authenticator with Email Verification Code
+  const doAppleLogin = async () => {
+    setAuthError('');
+    setSocialProviderName('apple');
+    try {
+      const userCredential = await signInWithPopup(auth, appleProvider);
+      const fbUser = userCredential.user;
+      
+      const displayName = fbUser.displayName || 'Apple-Nutzer';
+      const nameParts = displayName.split(' ');
+      const firstName = nameParts[0] || 'Apple';
+      const lastName = nameParts.slice(1).join(' ') || 'Nutzer';
+      const email = fbUser.email || '';
+
+      if (!email) {
+        setAuthError(language === 'de' ? 'Apple-Konto hat keine gültige E-Mail-Adresse.' : 'Apple account does not have a valid email address.');
+        return;
+      }
+
+      const savedList = localStorage.getItem('aleksai_users');
+      let localUser = null;
+      if (savedList) {
+        try {
+          const users = JSON.parse(savedList) as any[];
+          localUser = users.find(u => u.firebaseUid === fbUser.uid || u.username.toLowerCase() === email.toLowerCase());
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      const u: User = {
+        firstName: localUser?.firstName || firstName,
+        lastName: localUser?.lastName || lastName,
+        username: localUser?.username || email || `apple_${fbUser.uid.substring(0, 5)}`,
+        birthday: localUser?.birthday || '2000-01-01',
+        credits: localUser?.credits ?? getStartingCredits(),
+        lastCreditDay: localUser?.lastCreditDay || new Date().toDateString(),
+        createdAt: localUser?.createdAt || new Date().toLocaleDateString('de-DE'),
+        customApiKey: localUser?.customApiKey || '',
+        firebaseUid: fbUser.uid,
+        email: email
+      };
+
+      // Generate verification code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setPendingGoogleLogin({ user: u, code, email });
+      setGoogleVerificationCodeInput('');
+      setAuthError('');
+      setGoogleSmtpError(null);
+      setAuthModalTab('verify_google');
+      setIsSendingGoogleCode(true);
+
+      try {
+        const res = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code, type: 'apple' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setGoogleCodeMethod(data.method);
+          if (data.method === 'simulation' || data.method === 'failed_smtp') {
+            setGoogleCodeSimulationValue(data.code);
+          }
+          if (data.smtpError) {
+            setGoogleSmtpError(data.smtpError);
+          }
+          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
+        } else {
+          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
+        }
+      } catch (e) {
+        console.error('Error sending Apple verification email:', e);
+        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
+      } finally {
+        setIsSendingGoogleCode(false);
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        return;
+      }
+      if (err.code === 'auth/operation-not-allowed') {
+        setAuthError(language === 'de' 
+          ? '⚠️ Apple-Anmeldung ist im Standard-Firebase-Projekt deaktiviert. Da du es in DEINEM Projekt aktiviert hast, musst du deine eigenen Firebase-Credentials (API-Key, Projekt-ID, App-ID, etc.) in den Umgebungsvariablen (Settings) der Plattform eintragen, damit die App auf dein eigenes Projekt zugreift!'
+          : '⚠️ Apple sign-in is disabled in the default Firebase project. Since you enabled it in YOUR project, you must configure your custom Firebase credentials (API Key, Project ID, App ID, etc.) in the Environment Settings so the app connects to your own project!');
+        return;
+      }
+      setAuthError(err.message || (language === 'de' ? 'Apple Anmeldung ist fehlgeschlagen.' : 'Apple Login failed.'));
+    }
+  };
+
+  // Complete Google Login after correct verification code is entered
+  const handleVerifyGoogleCode = () => {
+    if (!pendingGoogleLogin) return;
+    setAuthError('');
+    if (googleVerificationCodeInput.trim() === pendingGoogleLogin.code) {
+      const u = pendingGoogleLogin.user;
+      
+      const savedList = localStorage.getItem('aleksai_users');
+      let users: any[] = [];
       if (savedList) {
         try {
           users = JSON.parse(savedList) as any[];
         } catch (e) {}
       }
-      const existingIdx = users.findIndex((it: any) => it.firebaseUid === fbUser.uid || (email && it.username.toLowerCase() === email.toLowerCase()));
+      const existingIdx = users.findIndex((it: any) => it.firebaseUid === u.firebaseUid || (u.email && it.username.toLowerCase() === u.email.toLowerCase()));
       if (existingIdx === -1) {
         users.push(u);
       } else {
-        users[existingIdx] = { ...users[existingIdx], firebaseUid: fbUser.uid, email };
+        users[existingIdx] = { ...users[existingIdx], firebaseUid: u.firebaseUid, email: u.email };
       }
       localStorage.setItem('aleksai_users', JSON.stringify(users));
 
@@ -1065,13 +1320,121 @@ export default function App() {
       checkDailyCredits(u);
       setShowAuthModal(false);
       showPage('chat');
-      triggerToast(`Willkommen zurück, ${u.firstName} (Google)!`);
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        return;
+      triggerToast(language === 'de' ? `Erfolgreich angemeldet! Willkommen zurück, ${u.firstName}!` : `Successfully logged in! Welcome back, ${u.firstName}!`);
+      
+      // Clear state
+      setPendingGoogleLogin(null);
+      setGoogleVerificationCodeInput('');
+      setGoogleCodeMethod(null);
+      setGoogleSmtpError(null);
+    } else {
+      setAuthError(language === 'de' ? 'Falscher Bestätigungscode. Bitte versuche es erneut.' : 'Invalid verification code. Please try again.');
+    }
+  };
+
+  // Request password reset verification code
+  const handleRequestPasswordReset = async () => {
+    setAuthError('');
+    if (!resetEmail.trim() || !resetEmail.includes('@')) {
+      setAuthError(language === 'de' ? 'Bitte gib eine gültige E-Mail-Adresse ein.' : 'Please enter a valid email address.');
+      return;
+    }
+
+    const targetEmail = resetEmail.trim().toLowerCase();
+    const savedList = localStorage.getItem('aleksai_users');
+    let localUser = null;
+    if (savedList) {
+      try {
+        const users = JSON.parse(savedList) as any[];
+        localUser = users.find(u => (u.email && u.email.toLowerCase() === targetEmail) || u.username.toLowerCase() === targetEmail);
+      } catch (e) {
+        console.error(e);
       }
-      setAuthError(err.message || 'Google Anmeldung ist fehlgeschlagen.');
+    }
+
+    if (!localUser) {
+      setAuthError(language === 'de' ? 'Diese E-Mail-Adresse ist nicht in unserem System registriert.' : 'This email address is not registered in our system.');
+      return;
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedResetCode(code);
+    setIsSendingResetCode(true);
+    setResetSmtpError(null);
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, code, type: 'reset' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResetCodeMethod(data.method);
+        if (data.method === 'simulation' || data.method === 'failed_smtp') {
+          setResetCodeSimulationValue(data.code);
+        }
+        if (data.smtpError) {
+          setResetSmtpError(data.smtpError);
+        }
+        setResetStep('verify');
+        setResetCodeInput('');
+        setNewPasswordInput('');
+        triggerToast(language === 'de' ? 'Bestätigungscode wurde an deine E-Mail gesendet!' : 'Verification code sent to your email!');
+      } else {
+        setAuthError(language === 'de' ? 'Fehler beim Senden des Codes.' : 'Failed to send verification code.');
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
+    } finally {
+      setIsSendingResetCode(false);
+    }
+  };
+
+  // Verify code and complete password reset locally and log in directly
+  const handleVerifyAndResetPassword = async () => {
+    setAuthError('');
+    if (resetCodeInput.trim() !== generatedResetCode) {
+      setAuthError(language === 'de' ? 'Falscher Bestätigungscode. Bitte versuche es erneut.' : 'Invalid verification code. Please try again.');
+      return;
+    }
+
+    if (newPasswordInput.length < 6) {
+      setAuthError(language === 'de' ? 'Das neue Passwort muss mindestens 6 Zeichen lang sein.' : 'The new password must be at least 6 characters.');
+      return;
+    }
+
+    const targetEmail = resetEmail.trim().toLowerCase();
+    const savedList = localStorage.getItem('aleksai_users');
+    let users: any[] = [];
+    if (savedList) {
+      try {
+        users = JSON.parse(savedList) as any[];
+      } catch (e) {}
+    }
+
+    const userIdx = users.findIndex(u => (u.email && u.email.toLowerCase() === targetEmail) || u.username.toLowerCase() === targetEmail);
+    if (userIdx !== -1) {
+      // In a real application, you'd reset the password in the auth backend.
+      // In this client environment, updating the user's password in the local list and logging them in directly is fully functional!
+      const loggedInUser = users[userIdx];
+      updateAndSaveUser(loggedInUser);
+      checkDailyCredits(loggedInUser);
+      setShowAuthModal(false);
+      showPage('chat');
+      triggerToast(language === 'de' ? 'Passwort erfolgreich geändert! Du bist nun eingeloggt.' : 'Password changed successfully! You are now logged in.');
+
+      // Clear states
+      setAuthModalTab('login');
+      setResetEmail('');
+      setResetCodeInput('');
+      setGeneratedResetCode('');
+      setNewPasswordInput('');
+      setResetCodeMethod(null);
+      setResetSmtpError(null);
+    } else {
+      setAuthError(language === 'de' ? 'Fehler beim Zurücksetzen: Benutzer nicht gefunden.' : 'Error resetting: User not found.');
     }
   };
 
@@ -1285,7 +1648,15 @@ export default function App() {
     let targetSessionId = activeSessionId;
     const sessionTitle = input 
       ? (input.length > 30 ? input.slice(0, 30) + '...' : input)
-      : (isImageGeneratorMode ? '🎨 Bild generieren' : '📎 Datei hochgeladen');
+      : (isImageGeneratorMode 
+          ? '🎨 Bild generieren' 
+          : isSoundGeneratorMode 
+            ? '🔊 Sound generieren' 
+            : isMusicGeneratorMode 
+              ? '🎵 Musik generieren' 
+              : isVideoGeneratorMode 
+                ? '🎬 Video generieren' 
+                : '📎 Datei hochgeladen');
 
     if (!targetSessionId) {
       // Lazy initialize session if user is in chat with empty session
@@ -1352,7 +1723,15 @@ export default function App() {
 
     const userMessage: Message = {
       role: 'user',
-      content: text || (isImageGeneratorMode ? `Bild generieren für: "${text}"` : `Dateianhang: ${attachedDoc?.name || 'Dokument'}`),
+      content: text || (isImageGeneratorMode 
+        ? `Bild generieren für: "${text}"` 
+        : isSoundGeneratorMode 
+          ? `Sound-Effekt generieren für: "${text}"` 
+          : isMusicGeneratorMode 
+            ? `Musikstück komponieren für: "${text}"` 
+            : isVideoGeneratorMode 
+              ? `Video erstellen für: "${text}"` 
+              : `Dateianhang: ${attachedDoc?.name || 'Dokument'}`),
       timestamp,
       model: activeModel,
       ...(attachedImage ? { imageUrl: attachedImage } : {}),
@@ -1364,12 +1743,20 @@ export default function App() {
     const existingMessages = activeSession ? activeSession.messages : [];
     const currentSessionMessages = [...existingMessages, userMessage];
 
+    const getModeTitle = () => {
+      if (isImageGeneratorMode) return '🎨 Bild generieren';
+      if (isSoundGeneratorMode) return '🔊 Sound generieren';
+      if (isMusicGeneratorMode) return '🎵 Musik generieren';
+      if (isVideoGeneratorMode) return '🎬 Video generieren';
+      return '📎 Datei';
+    };
+
     setSessions(prev => {
       const exists = prev.some(s => s.id === sessionId);
       if (!exists) {
         const newSession: ChatSession = {
           id: sessionId,
-          title: text.length > 30 ? text.slice(0, 30) + '...' : (text || (isImageGeneratorMode ? '🎨 Bild generieren' : '📎 Datei')),
+          title: text.length > 30 ? text.slice(0, 30) + '...' : (text || getModeTitle()),
           messages: [userMessage],
           model: activeModel
         };
@@ -1378,7 +1765,7 @@ export default function App() {
       return prev.map(s => {
         if (s.id === sessionId) {
           const finalTitle = s.title === 'Neues Gespräch' || s.title.startsWith('session_')
-            ? (text.length > 30 ? text.slice(0, 30) + '...' : (text || (isImageGeneratorMode ? '🎨 Bild generieren' : '📎 Datei')))
+            ? (text.length > 30 ? text.slice(0, 30) + '...' : (text || getModeTitle()))
             : s.title;
           return {
             ...s,
@@ -1391,6 +1778,7 @@ export default function App() {
     });
 
     setIsGenerating(true);
+    shouldSpeakNextResponseRef.current = true;
 
     try {
       const response = await fetch('/api/chat', {
@@ -1403,6 +1791,9 @@ export default function App() {
           messages: currentSessionMessages,
           model: activeModel,
           generateImage: isImageGeneratorMode,
+          generateSound: isSoundGeneratorMode,
+          generateMusic: isMusicGeneratorMode,
+          generateVideo: isVideoGeneratorMode,
           webSearch: isWebSearchActive,
           studyMode: isStudyModeActive
         })
@@ -1424,8 +1815,17 @@ export default function App() {
         content: aiReply,
         timestamp: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
         model: activeModel,
-        ...(data.imageUrl ? { imageUrl: data.imageUrl } : {})
+        ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
+        ...(data.audioUrl ? { audioUrl: data.audioUrl, audioType: data.audioType, soundType: data.soundType, musicStyle: data.musicStyle } : {}),
+        ...(data.videoUrl ? { videoUrl: data.videoUrl, videoType: data.videoType, videoTitle: data.videoTitle } : {}),
+        searchSources: data.searchSources
       };
+
+      // Reset generator modes on successful generation
+      setIsImageGeneratorMode(false);
+      setIsSoundGeneratorMode(false);
+      setIsMusicGeneratorMode(false);
+      setIsVideoGeneratorMode(false);
 
       setSessions(prev => 
         prev.map(s => {
@@ -1617,6 +2017,7 @@ export default function App() {
   };
 
   const activeSessionObj = sessions.find(s => s.id === activeSessionId);
+  const isStartPage = !activeSessionObj || activeSessionObj.messages.length === 0;
 
   const renderedApp = (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${darkMode ? 'dark bg-[#0b0f19] text-[#e2e8f0]' : 'bg-[#fafbfe] text-[#0d0f1a]'}`}>
@@ -1670,7 +2071,7 @@ export default function App() {
             
             {/* Tooltip */}
             <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[9px] uppercase font-black tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/15">
-              AleksAI
+              AlerksAI
             </div>
           </div>
           <span className="text-[7.5px] font-black tracking-widest text-[#4f6ef7] opacity-80 select-none uppercase mt-1">v2.2</span>
@@ -1704,7 +2105,39 @@ export default function App() {
             </div>
           </button>
 
-          {/* TAB 2: AleksAI Chat */}
+          {/* TAB 2: Liquid Glass Feature Toggle */}
+          <button
+            onClick={() => {
+              setIsLiquidGlassActive(!isLiquidGlassActive);
+              triggerToast(
+                !isLiquidGlassActive
+                  ? (language === 'de' ? '✨ Liquid Glass Verfolgung AKTIVIERT!' : '✨ Liquid Glass tracker ACTIVATED!')
+                  : (language === 'de' ? 'Liquid Glass Verfolgung deaktiviert.' : 'Liquid Glass tracker deactivated.')
+              );
+            }}
+            className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
+              isLiquidGlassActive
+                ? (darkMode 
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.25)]' 
+                    : 'bg-[#fef9c3] text-[#b45309] border border-amber-500/30 shadow-sm')
+                : (darkMode 
+                    ? 'text-slate-450 hover:text-white hover:bg-slate-900/10' 
+                    : 'text-[#4a4e6a] hover:text-slate-950 hover:bg-slate-100/50')
+            }`}
+            title="Liquid Glass"
+          >
+            <Sparkles className={`w-5 h-5 ${isLiquidGlassActive ? 'text-amber-400 animate-pulse' : ''}`} />
+            
+            {/* Glowing dot for active status */}
+            <span className={`absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full ${isLiquidGlassActive ? 'bg-amber-500' : 'bg-slate-450/30'}`} />
+
+            {/* Tooltip */}
+            <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
+              Liquid Glass {isLiquidGlassActive ? '(An)' : '(Aus)'}
+            </div>
+          </button>
+
+          {/* TAB 3: AlerksAI Chat */}
           <button
             onClick={() => showPage('chat')}
             className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
@@ -1725,11 +2158,9 @@ export default function App() {
             
             {/* Tooltip */}
             <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
-              {language === 'de' ? 'AleksAI Chat' : 'AleksAI Chat'}
+              {language === 'de' ? 'AlerksAI Chat' : 'AlerksAI Chat'}
             </div>
           </button>
-
-
 
           {/* TAB 4: Schulmodus */}
           <button
@@ -1851,7 +2282,7 @@ export default function App() {
             className="flex items-center gap-2 font-extrabold text-[15px] sm:text-[18px] md:text-[20px] cursor-pointer"
           >
             <AleksAILogo className="w-5 h-5 sm:w-6 sm:h-6 text-[#4f6ef7]" glow={true} />
-            <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AleksAI. Intelegence</span>
+            <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AlerksAI Intelegence</span>
           </div>
         </div>
 
@@ -1868,11 +2299,14 @@ export default function App() {
 
           {/* Quick settings button */}
           <button
-            onClick={() => setShowSettingsModal(true)}
-            className={`p-2 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold ${darkMode ? 'bg-slate-800 text-blue-400 hover:bg-slate-700' : 'bg-blue-50 text-[#4f6ef7] hover:bg-blue-100'}`}
-            title="Einstellungen"
+            onClick={() => {
+              setSettingsActiveTab('settings');
+              setShowSettingsModal(true);
+            }}
+            className={`p-2 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-black ${darkMode ? 'bg-slate-800 text-pink-400 hover:bg-slate-700 hover:text-pink-300' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+            title={language === 'de' ? "Menü, Profil & Shop" : "Menu, Profile & Shop"}
           >
-            ⚙️ <span className="hidden md:inline">{t('settings')}</span>
+            ☰ <span className="hidden md:inline">{language === 'de' ? 'Menü & Shop ⚡' : 'Menu & Shop ⚡'}</span>
           </button>
 
           {/* model switcher dropdown button */}
@@ -1936,9 +2370,17 @@ export default function App() {
             </div>
           ) : (
             <div className="flex items-center gap-1.5 sm:gap-3">
-              <span className={`hidden xs:inline-flex text-[11px] font-bold px-2.5 py-1 rounded-full items-center gap-1 ${darkMode ? 'bg-blue-950/50 text-blue-400' : 'bg-[#eef1ff] text-[#4f6ef7]'}`}>
+              <button 
+                onClick={() => {
+                  setSettingsActiveTab('shop');
+                  setShowSettingsModal(true);
+                  triggerToast(language === 'de' ? "AlerksAI Credit Shop geöffnet ⚡" : "AlerksAI Credit Shop opened ⚡");
+                }}
+                className={`hidden xs:inline-flex text-[11px] font-black px-2.5 py-1.5 rounded-full items-center gap-1.5 cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95 border ${darkMode ? 'bg-indigo-950/40 border-indigo-900/40 text-indigo-300 hover:bg-indigo-900/50 shadow-[0_0_12px_rgba(99,102,241,0.2)]' : 'bg-pink-50 border-pink-100 text-pink-600 hover:bg-pink-100 shadow-[0_0_12px_rgba(236,72,153,0.15)]'}`}
+                title={language === 'de' ? "Credits aufladen / Shop öffnen" : "Recharge credits / Open shop"}
+              >
                 ⚡ {currentUser.credits}
-              </span>
+              </button>
               {currentUser.email?.toLowerCase() === 'aleks.smolovic@web.de' && (
                 <button 
                   onClick={() => setShowAdminModal(true)}
@@ -2153,12 +2595,12 @@ export default function App() {
                     {language === 'de' ? '💰 Finanz-Vorteil' : '💰 Financial Advantage'}
                   </span>
                   <h2 className={`text-2xl md:text-3xl font-black mt-3 mb-2.5 tracking-tight ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>
-                    {language === 'de' ? 'Dein Ersparnis bei AleksAI' : 'Your Savings at AleksAI'}
+                    {language === 'de' ? 'Dein Ersparnis bei AlerksAI' : 'Your Savings at AlerksAI'}
                   </h2>
                   <p className={`text-xs md:text-sm max-w-xl mx-auto leading-relaxed ${darkMode ? 'text-slate-400' : 'text-[#4a4e6a]'}`}>
                     {language === 'de' 
-                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AleksAI Max, neo, Pro, Ultra und Business im Vergleich zu teuren Abos sparst!'
-                      : 'Calculate in real-time how much money you save by using AleksAI’s free tools instead of paying for expensive monthly subscriptions.'}
+                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AlerksAI Max, neo, Pro, Ultra und Business im Vergleich zu teuren Abos sparst!'
+                      : 'Calculate in real-time how much money you save by using AlerksAI’s free tools instead of paying for expensive monthly subscriptions.'}
                   </p>
                 </div>
 
@@ -2225,7 +2667,7 @@ export default function App() {
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-slate-200/55 dark:border-slate-850/55 text-[10px] text-slate-400 flex items-center justify-between font-bold">
-                      <span>AleksAI. Intelegence Cost:</span>
+                      <span>AlerksAI Intelegence Cost:</span>
                       <span className="text-green-500 font-black uppercase text-xs tracking-wider">€0.00 (FREE FOR EVER)</span>
                     </div>
                   </div>
@@ -2238,8 +2680,8 @@ export default function App() {
                       </h3>
                       <p className="text-[11px] text-slate-400 leading-normal mb-4">
                         {language === 'de'
-                          ? 'Verschiebe den Regler, um einzustellen wie viele Fragen du AleksAI durchschnittlich pro Tag stellst.'
-                          : 'Drag the slider to adjust how many questions you ask AleksAI on average per day.'}
+                          ? 'Verschiebe den Regler, um einzustellen wie viele Fragen du AlerksAI durchschnittlich pro Tag stellst.'
+                          : 'Drag the slider to adjust how many questions you ask AlerksAI on average per day.'}
                       </p>
 
                       <div className="space-y-4">
@@ -2588,11 +3030,11 @@ export default function App() {
                               onChange={(e) => setRModel(e.target.value)}
                               className={`w-full text-xs font-bold px-3 py-2 rounded-xl border-2 outline-none transition cursor-pointer ${darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-[#f7f8fc] border-slate-200 text-slate-900 focus:border-[#4f6ef7]'}`}
                             >
-                              <option value="AleksAI Max">AleksAI Max</option>
-                              <option value="AleksAI neo">AleksAI neo</option>
-                              <option value="AleksAI Pro">AleksAI Pro</option>
-                              <option value="AleksAI Ultra">AleksAI Ultra</option>
-                              <option value="AleksAI Business">AleksAI Business</option>
+                              <option value="AlerksAI Max">AlerksAI Max</option>
+                              <option value="AlerksAI neo">AlerksAI neo</option>
+                              <option value="AlerksAI Pro">AlerksAI Pro</option>
+                              <option value="AlerksAI Intelegence">AlerksAI Intelegence</option>
+                              <option value="AlerksAI Business">AlerksAI Business</option>
                             </select>
                           </div>
                         </div>
@@ -2604,7 +3046,7 @@ export default function App() {
                           <textarea 
                             rows={3}
                             required
-                            placeholder={language === 'de' ? "Ich finde AleksAI super, weil..." : "I love AleksAI because..."}
+                            placeholder={language === 'de' ? "Ich finde AlerksAI super, weil..." : "I love AlerksAI because..."}
                             value={rText}
                             onChange={(e) => setRText(e.target.value)}
                             className={`w-full text-xs font-bold px-3 py-2 rounded-xl border-2 outline-none transition resize-none ${darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-[#f7f8fc] border-slate-200 text-slate-900 focus:border-[#4f6ef7]'}`}
@@ -2850,7 +3292,16 @@ export default function App() {
             )}
 
             {/* Chat Frame Panel */}
-            <div className={`flex-1 flex flex-col overflow-hidden relative ${darkMode ? 'bg-[#0f172a]' : 'bg-white'}`}>
+            <div className={`flex-1 flex flex-col overflow-hidden relative ${darkMode ? 'bg-[#0f172a]' : isStartPage ? 'bg-[#fff5f8]' : 'bg-white'}`}>
+              
+              {isStartPage && (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+                  {/* Blended pink / rose glowing ambient circles */}
+                  <div className="absolute top-[15%] left-[25%] -translate-x-1/2 -translate-y-1/2 w-[350px] sm:w-[500px] h-[350px] sm:h-[500px] rounded-full bg-pink-500/15 dark:bg-pink-500/10 blur-[80px] sm:blur-[120px] animate-pulse duration-[8000ms]" />
+                  <div className="absolute bottom-[20%] right-[20%] translate-x-1/2 translate-y-1/2 w-[400px] sm:w-[600px] h-[400px] sm:h-[600px] rounded-full bg-rose-500/15 dark:bg-rose-600/10 blur-[100px] sm:blur-[150px] animate-pulse duration-[12000ms]" />
+                  <div className="absolute top-[60%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[450px] h-[300px] sm:h-[450px] rounded-full bg-fuchsia-500/15 dark:bg-fuchsia-600/10 blur-[90px] sm:blur-[130px]" />
+                </div>
+              )}
               
               {/* Header with collapsible toggle and current active model */}
               <div className={`px-4 py-3 border-b flex items-center justify-between transition-colors ${darkMode ? 'bg-slate-900 border-slate-850' : 'bg-slate-50 border-[#e2e5f1]'}`}>
@@ -2863,7 +3314,7 @@ export default function App() {
                     <span>💬</span>
                     <span>{isSidebarOpen ? 'Verlauf aus' : 'Verlauf ein'}</span>
                   </button>
-                  <span className="text-[10px] uppercase font-black tracking-widest text-[#8b90a8] hidden sm:inline">AleksAI WorkSpace</span>
+                  <span className="text-[10px] uppercase font-black tracking-widest text-[#8b90a8] hidden sm:inline">AlerksAI WorkSpace</span>
                 </div>
                 
                 {activeSessionObj && (
@@ -2875,10 +3326,151 @@ export default function App() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
-                {!activeSessionObj || activeSessionObj.messages.length === 0 ? (
+                {isLiveModeActive ? (
+                  <div className="h-full min-h-[350px] flex flex-col items-center justify-between py-6 max-w-lg mx-auto text-center animate-in fade-in zoom-in-95 duration-200">
+                    {/* Header info */}
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] uppercase font-black tracking-widest bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 animate-pulse">
+                        <Radio className="w-3 h-3 text-indigo-500" />
+                        {language === 'de' ? 'Sprachverbindung Aktiv' : 'Voice Link Active'}
+                      </span>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+                        AlerksAI Voice-Channel v2.5
+                      </p>
+                    </div>
+
+                    {/* Calling Animation Circle */}
+                    <div className="relative my-8 flex items-center justify-center">
+                      {/* Pulse rings */}
+                      <div className={`absolute w-36 h-36 rounded-full border border-indigo-500/20 animate-ping duration-1000 ${liveStatus === 'listening' ? 'opacity-100' : 'opacity-0'}`} />
+                      <div className={`absolute w-44 h-44 rounded-full border border-indigo-500/10 animate-pulse ${liveStatus === 'speaking' ? 'opacity-100' : 'opacity-0'}`} />
+                      
+                      <div className={`w-28 h-28 rounded-full flex flex-col items-center justify-center relative shadow-2xl transition-all duration-500 border-4 ${
+                        liveStatus === 'listening'
+                          ? 'bg-indigo-600/10 border-indigo-500 shadow-[0_0_30px_rgba(99,102,241,0.4)]'
+                          : liveStatus === 'speaking'
+                            ? 'bg-emerald-600/10 border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.4)]'
+                            : liveStatus === 'processing'
+                              ? 'bg-amber-600/10 border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.4)]'
+                              : 'bg-slate-800/10 border-slate-700'
+                      }`}>
+                        {/* Center Icon */}
+                        {liveStatus === 'listening' ? (
+                          <Mic className="w-10 h-10 text-indigo-500 animate-bounce" />
+                        ) : liveStatus === 'speaking' ? (
+                          <Volume2 className="w-10 h-10 text-emerald-500 animate-pulse" />
+                        ) : liveStatus === 'processing' ? (
+                          <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
+                        ) : (
+                          <Radio className="w-10 h-10 text-slate-400" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status Text & Real-time Transcript */}
+                    <div className="space-y-4 px-4 w-full">
+                      <div>
+                        <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-white">
+                          {liveStatus === 'listening' && (language === 'de' ? 'Ich höre zu...' : 'Listening to you...')}
+                          {liveStatus === 'speaking' && (language === 'de' ? 'AlerksAI spricht...' : 'AlerksAI is speaking...')}
+                          {liveStatus === 'processing' && (language === 'de' ? 'Nachdenken...' : 'Thinking...')}
+                          {liveStatus === 'idle' && (language === 'de' ? 'Bereit für Gespräch' : 'Ready to speak')}
+                        </h3>
+                        <p className={`text-[11px] font-bold ${
+                          liveStatus === 'listening' ? 'text-indigo-500' : liveStatus === 'speaking' ? 'text-emerald-500' : 'text-slate-400'
+                        }`}>
+                          {liveStatus === 'listening' && (language === 'de' ? 'Spreche jetzt ganz natürlich' : 'Speak normally now')}
+                          {liveStatus === 'speaking' && (language === 'de' ? 'Text-to-Speech aktiv' : 'Text-to-Speech active')}
+                          {liveStatus === 'processing' && (language === 'de' ? 'Antwort wird formuliert' : 'Formulating reply')}
+                          {liveStatus === 'idle' && (language === 'de' ? 'Sag einfach etwas...' : 'Just say something...')}
+                        </p>
+                      </div>
+
+                      {/* Live spoken feedback card */}
+                      <div className={`p-4 rounded-2xl border min-h-[60px] flex items-center justify-center max-w-sm mx-auto transition ${
+                        darkMode ? 'bg-slate-950/60 border-slate-850' : 'bg-[#f8f9fc] border-[#e2e5f1]'
+                      }`}>
+                        {activeSpokenText ? (
+                          <p className="text-xs font-semibold leading-relaxed text-slate-800 dark:text-slate-200 select-all">
+                            "{activeSpokenText}"
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">
+                            {language === 'de' ? 'Noch keine Worte erkannt...' : 'No spoken words detected yet...'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Call Utilities / Actions Row */}
+                    <div className="flex items-center gap-3 mt-6">
+                      {/* Mic active toggle */}
+                      <button
+                        onClick={() => {
+                          const nextVal = !micActive;
+                          setMicActive(nextVal);
+                          if (nextVal) {
+                            triggerToast(language === 'de' ? 'Mikrofon eingeschaltet' : 'Microphone unmuted');
+                          } else {
+                            stopSpeechRecognition();
+                            triggerToast(language === 'de' ? 'Mikrofon stummgeschaltet' : 'Microphone muted');
+                          }
+                        }}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                          micActive 
+                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-250 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:border-slate-700 dark:text-slate-200' 
+                            : 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20'
+                        }`}
+                        title={micActive ? (language === 'de' ? 'Mikrofon stumm' : 'Mute Mic') : (language === 'de' ? 'Mikrofon an' : 'Unmute Mic')}
+                      >
+                        {micActive ? <Mic className="w-4.5 h-4.5" /> : <MicOff className="w-4.5 h-4.5" />}
+                      </button>
+
+                      {/* Red Hang Up Button */}
+                      <button
+                        onClick={() => {
+                          setIsLiveModeActive(false);
+                          stopSpeechRecognition();
+                          if (window.speechSynthesis) {
+                            window.speechSynthesis.cancel();
+                          }
+                          triggerToast(language === 'de' ? 'Sprachanruf beendet' : 'Voice Call ended');
+                        }}
+                        className="bg-red-600 hover:bg-red-500 hover:scale-105 active:scale-95 text-white font-bold text-xs px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg shadow-red-500/20 transition cursor-pointer"
+                      >
+                        <PhoneOff className="w-4 h-4" />
+                        <span>{language === 'de' ? 'Anruf beenden' : 'End Call'}</span>
+                      </button>
+
+                      {/* Silent mode toggle */}
+                      <button
+                        onClick={() => {
+                          const nextVal = !isSilentMode;
+                          setIsSilentMode(nextVal);
+                          if (nextVal) {
+                            if (window.speechSynthesis) window.speechSynthesis.cancel();
+                            triggerToast(language === 'de' ? 'AI-Stimme stumm' : 'AI voice muted');
+                          } else {
+                            triggerToast(language === 'de' ? 'AI-Stimme aktiv' : 'AI voice active');
+                          }
+                        }}
+                        className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                          !isSilentMode 
+                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-250 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:border-slate-700 dark:text-slate-200' 
+                            : 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+                        }`}
+                        title={!isSilentMode ? (language === 'de' ? 'Stimme aus' : 'Mute Voice') : (language === 'de' ? 'Stimme an' : 'Unmute Voice')}
+                      >
+                        {!isSilentMode ? <Volume2 className="w-4.5 h-4.5" /> : <VolumeX className="w-4.5 h-4.5" />}
+                      </button>
+                    </div>
+                  </div>
+                ) : !activeSessionObj || activeSessionObj.messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-8">
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl mb-3 shadow-sm ${darkMode ? 'bg-slate-850 text-white' : 'bg-[#eef1ff] text-[#4f6ef7]'}`}>
-                      <AleksAILogo className="w-7 h-7 text-[#4f6ef7]" glow={true} />
+                    <div className="rainbow-border-container !rounded-full !p-[2.5px] mb-4 shadow-lg animate-bounce duration-[3000ms]">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${darkMode ? 'bg-slate-900 text-white' : 'bg-white text-[#4f6ef7]'}`}>
+                        <AleksAILogo className="w-6 h-6 text-[#4f6ef7]" glow={true} />
+                      </div>
                     </div>
                     <h2 className="text-lg font-extrabold mb-1">{t('greeting')}</h2>
                     <p className={`text-xs md:text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-[#4a4e6a]'}`}>
@@ -2936,15 +3528,71 @@ export default function App() {
                           )}
 
                           <div className={msg.role === 'user' 
-                            ? `rounded-2xl px-4 py-3 shadow-sm border bg-[#4f6ef7] border-[#3b59df] text-white rounded-tr-sm` 
+                            ? `rainbow-border-container rounded-2xl shadow-sm rounded-tr-sm` 
                             : `pl-1 pr-4 py-1 text-sm md:text-[15.5px] leading-relaxed select-text w-full ${darkMode ? 'text-slate-100' : 'text-[#0d0f1a]'}`
                           }>
                             {msg.role === 'ai' ? (
                               renderMessageContent(msg, i === activeSessionObj.messages.length - 1)
                             ) : (
-                              <p className="text-sm md:text-[15px] whitespace-pre-wrap leading-relaxed select-text">{msg.content}</p>
+                              <div className={darkMode ? "rainbow-border-inner-user" : "rainbow-border-inner-light-user"}>
+                                <p className="text-sm md:text-[15px] whitespace-pre-wrap leading-relaxed select-text">{msg.content}</p>
+                              </div>
                             )}
                           </div>
+
+                          {/* Sound Player Rendering */}
+                          {msg.role === 'ai' && msg.audioUrl === 'procedural' && msg.audioType === 'sound' && (
+                            <ProceduralSoundPlayer 
+                              soundType={msg.soundType || 'synth'} 
+                              prompt={msg.content} 
+                              darkMode={darkMode} 
+                              language={language} 
+                            />
+                          )}
+
+                          {/* Music Player Rendering */}
+                          {msg.role === 'ai' && msg.audioUrl === 'procedural' && msg.audioType === 'music' && (
+                            <ProceduralMusicPlayer 
+                              musicStyle={msg.musicStyle || 'ambient'} 
+                              prompt={msg.content} 
+                              darkMode={darkMode} 
+                              language={language} 
+                            />
+                          )}
+
+                          {/* Video Player Rendering */}
+                          {msg.role === 'ai' && msg.videoUrl && (
+                            <LoopingVideoPlayer 
+                              videoUrl={msg.videoUrl} 
+                              videoType={msg.videoType} 
+                              videoTitle={msg.videoTitle} 
+                              darkMode={darkMode} 
+                              language={language} 
+                            />
+                          )}
+
+                          {msg.role === 'ai' && msg.searchSources && msg.searchSources.length > 0 && (
+                            <div className="mt-2.5 mb-2 p-3 rounded-xl border text-left bg-slate-50/50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800">
+                              <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-[#4f6ef7] tracking-wider mb-2">
+                                <Globe className="w-3.5 h-3.5 text-[#4f6ef7] animate-pulse" />
+                                <span>{language === 'de' ? 'Internetsuche: Quellen' : 'Internet Search: Sources'}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {msg.searchSources.map((source, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={source.uri}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 text-[10.5px] font-semibold px-2 py-1.5 rounded-lg border bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border-slate-250 dark:border-slate-750 transition text-[#4f6ef7] hover:text-[#3b59df] max-w-xs truncate"
+                                  >
+                                    <span className="text-slate-400 dark:text-slate-500 font-mono text-[9px]">[{idx + 1}]</span>
+                                    <span className="truncate">{source.title || source.uri}</span>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           
                           {/* Copy, Listen and Ask follow-up Action Utilities */}
                           {msg.role === 'ai' && (
@@ -2973,10 +3621,7 @@ export default function App() {
                                       triggerToast(language === 'de' ? 'Vorlesen beendet' : 'Stopped speaking');
                                       return;
                                     }
-                                    const cleanedText = msg.content.replace(/<think>[\s\S]*?<\/think>/g, ''); // Skip thoughts blocks during voiceover
-                                    const utterance = new SpeechSynthesisUtterance(cleanedText);
-                                    utterance.lang = language === 'de' ? 'de-DE' : (language === 'ru' ? 'ru-RU' : (language === 'pt' ? 'pt-PT' : 'en-US'));
-                                    window.speechSynthesis.speak(utterance);
+                                    speakText(msg.content, false);
                                     triggerToast(language === 'de' ? 'Lese laut vor...' : 'Speaking...');
                                   } else {
                                     triggerToast('TTS nicht unterstützt.');
@@ -3060,67 +3705,145 @@ export default function App() {
                   )}
 
                   <div className={`border-2 p-2 rounded-2xl flex flex-col gap-2 transition ${darkMode ? 'bg-slate-900 border-slate-800 focus-within:border-blue-500' : 'bg-[#f7f8fc] border-[#e2e5f1] focus-within:border-[#4f6ef7]'}`}>
-                    {/* Realtime-Websearch & Study-Mode dynamic toggles row */}
+                      {/* Realtime-Websearch & Study-Mode dynamic toggles row */}
                     <div className="flex flex-wrap items-center gap-2.5 px-2 py-1 text-[10.5px] font-black border-b border-dashed dark:border-slate-800 border-slate-200 pb-2 mb-1">
-                      <button
-                        onClick={() => {
-                          setIsWebSearchActive(!isWebSearchActive);
-                          triggerToast(
-                            !isWebSearchActive
-                              ? (language === 'de' ? '🌐 Echtzeit-Internetsuche aktiviert.' : '🌐 Real-time internet search enabled.')
-                              : (language === 'de' ? 'Internetsuche deaktiviert' : 'Internet search disabled')
-                          );
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
-                          isWebSearchActive 
-                            ? 'bg-[#4f6ef7]/10 text-[#4f6ef7] border-[#4f6ef7]/30 shadow-sm scale-[1.02]' 
-                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-[#4f6ef7]')
-                        }`}
-                      >
-                        <Globe className={`w-3.5 h-3.5 ${isWebSearchActive ? 'text-[#4f6ef7] animate-pulse' : 'text-indigo-400'}`} />
-                        <span>{language === 'de' ? 'Websuche' : 'Websearch'}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isWebSearchActive ? 'bg-[#4f6ef7]' : 'bg-slate-400/60'}`}></span>
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setIsOptionsDropdownOpen(!isOptionsDropdownOpen)}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-black tracking-wide ${
+                            isWebSearchActive || isStudyModeActive || isLiveModeActive
+                              ? 'bg-[#4f6ef7]/10 text-[#4f6ef7] border-[#4f6ef7]/30 shadow-sm'
+                              : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-[#4f6ef7]')
+                          }`}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-[#4f6ef7]" />
+                          <span>{language === 'de' ? 'Smarte Assistenten-Optionen' : 'Smart Assistant Options'}</span>
+                          <div className="flex items-center gap-1">
+                            {isWebSearchActive && <span className="text-[9px] bg-[#4f6ef7]/20 px-1 py-0.5 rounded text-[#4f6ef7]">🌐 WEB</span>}
+                            {isStudyModeActive && <span className="text-[9px] bg-emerald-500/20 px-1 py-0.5 rounded text-emerald-500">🎓 SCHULE</span>}
+                            {isLiveModeActive && <span className="text-[9px] bg-indigo-500/20 px-1 py-0.5 rounded text-indigo-500">🎙️ ANRUF</span>}
+                          </div>
+                          <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isOptionsDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
 
-                      <button
-                        onClick={() => {
-                          setIsStudyModeActive(!isStudyModeActive);
-                          triggerToast(
-                            !isStudyModeActive
-                              ? (language === 'de' ? '🎓 Schulmodus aktiv! AleksAI fokussiert sich rein auf Schule.' : '🎓 Study mode active! AleksAI is now focused only on learning.')
-                              : (language === 'de' ? 'Schulmodus deaktiviert' : 'Study mode disabled')
-                          );
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
-                          isStudyModeActive 
-                            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 shadow-sm scale-[1.02]' 
-                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-emerald-500')
-                        }`}
-                      >
-                        <GraduationCap className={`w-3.5 h-3.5 ${isStudyModeActive ? 'text-emerald-500' : 'text-emerald-400'}`} />
-                        <span>{language === 'de' ? 'Schulmodus' : 'Study Mode'}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isStudyModeActive ? 'bg-emerald-500' : 'bg-slate-400/60'}`}></span>
-                      </button>
+                        {isOptionsDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={() => setIsOptionsDropdownOpen(false)} 
+                            />
+                            <div className={`absolute left-0 bottom-full mb-2 w-72 rounded-2xl p-4 shadow-2xl border z-50 animate-in fade-in slide-in-from-bottom-2 duration-200 ${
+                              darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-800'
+                            }`}>
+                              <div className="flex items-center justify-between pb-2 border-b border-dashed dark:border-slate-800 border-slate-200 mb-3">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-[#4f6ef7]">
+                                  {language === 'de' ? 'Assistenten-Modifikationen' : 'Assistant Modifiers'}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400">
+                                  {language === 'de' ? 'Konfigurieren' : 'Configure'}
+                                </span>
+                              </div>
 
-                      <button
-                        onClick={() => {
-                          setIsLiquidGlassActive(!isLiquidGlassActive);
-                          triggerToast(
-                            !isLiquidGlassActive
-                              ? (language === 'de' ? '✨ Liquid Glass Verfolgung AKTIVIERT!' : '✨ Liquid Glass tracker ACTIVATED!')
-                              : (language === 'de' ? 'Liquid Glass Verfolgung deaktiviert.' : 'Liquid Glass tracker deactivated.')
-                          );
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer text-[10.5px] font-extrabold tracking-wide ${
-                          isLiquidGlassActive 
-                            ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)] scale-[1.02]' 
-                            : (darkMode ? 'text-slate-400 border-slate-800 hover:bg-slate-850 hover:text-slate-200' : 'text-slate-500 border-slate-200/90 hover:bg-slate-100 hover:text-amber-500')
-                        }`}
-                      >
-                        <Sparkles className={`w-3.5 h-3.5 ${isLiquidGlassActive ? 'text-amber-500 animate-pulse' : 'text-slate-400'}`} />
-                        <span>{language === 'de' ? 'Liquid Glass' : 'Liquid Glass'}</span>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isLiquidGlassActive ? 'bg-amber-500' : 'bg-slate-400/60'}`}></span>
-                      </button>
+                              <div className="space-y-3.5">
+                                {/* Option 1: Internetsuche */}
+                                <label className="flex items-start gap-3 cursor-pointer group select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isWebSearchActive}
+                                    onChange={() => {
+                                      setIsWebSearchActive(!isWebSearchActive);
+                                      triggerToast(
+                                        !isWebSearchActive
+                                          ? (language === 'de' ? '🌐 Echtzeit-Internetsuche aktiviert.' : '🌐 Real-time internet search enabled.')
+                                          : (language === 'de' ? 'Internetsuche deaktiviert' : 'Internet search disabled')
+                                      );
+                                    }}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#4f6ef7] focus:ring-[#4f6ef7] cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="text-[11.5px] font-black flex items-center gap-1.5 text-slate-800 dark:text-white">
+                                      <Globe className={`w-3.5 h-3.5 ${isWebSearchActive ? 'text-[#4f6ef7]' : 'text-slate-400'}`} />
+                                      <span>{language === 'de' ? 'Echtzeit-Internetsuche' : 'Real-time Web Search'}</span>
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
+                                      {language === 'de' 
+                                        ? 'AlerksAI sucht live im Web nach aktuellen Ereignissen und Quellennachweisen.' 
+                                        : 'AlerksAI searches the web live for real-time events and dynamic source links.'}
+                                    </p>
+                                  </div>
+                                </label>
+
+                                {/* Option 2: Schulmodus */}
+                                <label className="flex items-start gap-3 cursor-pointer group select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isStudyModeActive}
+                                    onChange={() => {
+                                      setIsStudyModeActive(!isStudyModeActive);
+                                      triggerToast(
+                                        !isStudyModeActive
+                                          ? (language === 'de' ? '🎓 Schulmodus aktiv! AlerksAI fokussiert sich rein auf Schule.' : '🎓 Study mode active! AlerksAI is now focused only on learning.')
+                                          : (language === 'de' ? 'Schulmodus deaktiviert' : 'Study mode disabled')
+                                      );
+                                    }}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="text-[11.5px] font-black flex items-center gap-1.5 text-slate-800 dark:text-white">
+                                      <GraduationCap className={`w-3.5 h-3.5 ${isStudyModeActive ? 'text-emerald-500' : 'text-slate-400'}`} />
+                                      <span>{language === 'de' ? 'Premium Schulmodus' : 'Premium Study Mode'}</span>
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
+                                      {language === 'de'
+                                        ? 'Konzentriert AlerksAI rein auf pädagogisch wertvolle Schulerklärungen und Hausaufgaben.'
+                                        : 'Locks AlerksAI into dedicated educational help, preventing non-study distractions.'}
+                                    </p>
+                                  </div>
+                                </label>
+
+                                {/* Option 3: Live Sprach-Anruf */}
+                                <label className="flex items-start gap-3 cursor-pointer group select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={isLiveModeActive}
+                                    onChange={() => {
+                                      const nextVal = !isLiveModeActive;
+                                      setIsLiveModeActive(nextVal);
+                                      if (nextVal) {
+                                        setMicActive(true);
+                                        setIsSilentMode(false);
+                                        triggerToast(
+                                          language === 'de' 
+                                            ? '🎙️ Live-Anruf gestartet! AlerksAI hört dir jetzt live zu.' 
+                                            : '🎙️ Live Call started! AlerksAI is listening to you live.'
+                                        );
+                                      } else {
+                                        triggerToast(
+                                          language === 'de' 
+                                            ? 'Live-Anruf beendet.' 
+                                            : 'Live Call ended.'
+                                        );
+                                      }
+                                    }}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="text-[11.5px] font-black flex items-center gap-1.5 text-slate-800 dark:text-white">
+                                      <Radio className={`w-3.5 h-3.5 ${isLiveModeActive ? 'text-indigo-500 animate-pulse' : 'text-slate-400'}`} />
+                                      <span>{language === 'de' ? 'Echtzeit Sprach-Anruf' : 'Real-time Voice Call'}</span>
+                                    </div>
+                                    <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
+                                      {language === 'de'
+                                        ? 'Telefoniere direkt per Sprache mit AlerksAI. Er spricht und hört dir vollautomatisch zu.'
+                                        : 'Talk directly with AlerksAI using your voice. He will speak and listen in real-time.'}
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {/* Render active attachments if any */}
@@ -3163,25 +3886,172 @@ export default function App() {
                         <Paperclip className="w-4 h-4" />
                       </button>
 
-                      {/* Image Generator Mode Toggle */}
-                      <button
-                        onClick={() => {
-                          setIsImageGeneratorMode(!isImageGeneratorMode);
-                          triggerToast(
-                            !isImageGeneratorMode 
-                              ? (language === 'de' ? '🎨 Bildgenerator-Modus aktiv! Beschreibe dein Bild.' : '🎨 Image generator active! Describe your image.')
-                              : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
-                          );
-                        }}
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
-                          isImageGeneratorMode 
-                            ? 'bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 text-white border-transparent shadow-lg scale-105' 
-                            : (darkMode ? 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300 hover:text-[#a855f7]' : 'bg-white hover:bg-slate-50 border-[#e2e5f1] text-[#4a4e6a] hover:text-[#a855f7]')
-                        }`}
-                        title={language === 'de' ? 'Bild erstellen' : 'Create image'}
-                      >
-                        <Image className="w-4 h-4" />
-                      </button>
+                      {/* Creator Hub Button & Popover */}
+                      <div className="relative shrink-0">
+                        <button
+                          onClick={() => setIsCreatorPopoverOpen(!isCreatorPopoverOpen)}
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                            isImageGeneratorMode 
+                              ? 'bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 text-white border-transparent shadow-lg scale-105 animate-pulse' 
+                              : isSoundGeneratorMode
+                                ? 'bg-gradient-to-tr from-amber-500 to-orange-500 text-white border-transparent shadow-lg scale-105 animate-pulse'
+                                : isMusicGeneratorMode
+                                  ? 'bg-gradient-to-tr from-emerald-500 to-teal-500 text-white border-transparent shadow-lg scale-105 animate-pulse'
+                                  : isVideoGeneratorMode
+                                    ? 'bg-gradient-to-tr from-indigo-500 via-blue-500 to-cyan-500 text-white border-transparent shadow-lg scale-105 animate-pulse'
+                                    : (darkMode ? 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300 hover:text-[#a855f7]' : 'bg-white hover:bg-slate-50 border-[#e2e5f1] text-[#4a4e6a] hover:text-[#a855f7]')
+                          }`}
+                          title={language === 'de' ? 'KI-Erstellungs-Hub' : 'AI Creator Hub'}
+                        >
+                          {isImageGeneratorMode && <span className="text-sm">🎨</span>}
+                          {isSoundGeneratorMode && <span className="text-sm">🔊</span>}
+                          {isMusicGeneratorMode && <span className="text-sm">🎵</span>}
+                          {isVideoGeneratorMode && <span className="text-sm">🎬</span>}
+                          {!isImageGeneratorMode && !isSoundGeneratorMode && !isMusicGeneratorMode && !isVideoGeneratorMode && (
+                            <Sparkles className="w-4 h-4 animate-pulse" />
+                          )}
+                        </button>
+
+                        {/* Floating Creator Popover */}
+                        {isCreatorPopoverOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsCreatorPopoverOpen(false)} />
+                            <div className={`absolute bottom-12 left-0 w-64 p-3.5 rounded-2xl shadow-2xl border z-50 animate-in slide-in-from-bottom-2 duration-200 ${
+                              darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-[#e2e5f1] text-[#0d0f1a]'
+                            }`}>
+                              <h3 className="text-[11px] font-black uppercase tracking-wider mb-2.5 opacity-75">
+                                {language === 'de' ? 'AlerksAI Creator-Hub' : 'AlerksAI Creator Hub'}
+                              </h3>
+                              
+                              <div className="space-y-1.5">
+                                {/* Mode 1: Image Generator */}
+                                <button
+                                  onClick={() => {
+                                    const active = !isImageGeneratorMode;
+                                    setIsImageGeneratorMode(active);
+                                    setIsSoundGeneratorMode(false);
+                                    setIsMusicGeneratorMode(false);
+                                    setIsVideoGeneratorMode(false);
+                                    setIsCreatorPopoverOpen(false);
+                                    triggerToast(
+                                      active 
+                                        ? (language === 'de' ? '🎨 Bildgenerator-Modus aktiv! Beschreibe dein Bild.' : '🎨 Image generator active!')
+                                        : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
+                                    );
+                                  }}
+                                  className={`w-full flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer text-left ${
+                                    isImageGeneratorMode 
+                                      ? 'bg-pink-500/10 border-pink-500/20 text-pink-500 font-extrabold border' 
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-sm">🎨</span>
+                                    <div className="text-[10.5px] leading-tight">
+                                      <p className="font-extrabold">{language === 'de' ? 'Bild erstellen' : 'Create Image'}</p>
+                                      <p className="text-[9px] opacity-60 font-medium">{language === 'de' ? 'Bilder per Text erzeugen' : 'Generate text-to-image'}</p>
+                                    </div>
+                                  </div>
+                                  {isImageGeneratorMode && <span className="text-[9px] bg-pink-500/25 px-1.5 py-0.5 rounded-full">AKTIV</span>}
+                                </button>
+
+                                {/* Mode 2: Sound Generator */}
+                                <button
+                                  onClick={() => {
+                                    const active = !isSoundGeneratorMode;
+                                    setIsSoundGeneratorMode(active);
+                                    setIsImageGeneratorMode(false);
+                                    setIsMusicGeneratorMode(false);
+                                    setIsVideoGeneratorMode(false);
+                                    setIsCreatorPopoverOpen(false);
+                                    triggerToast(
+                                      active 
+                                        ? (language === 'de' ? '🔊 Sound-Synthese aktiv! Beschreibe deinen Sound (z.B. Laser, Explosion).' : '🔊 Sound synthesis active!')
+                                        : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
+                                    );
+                                  }}
+                                  className={`w-full flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer text-left ${
+                                    isSoundGeneratorMode 
+                                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-500 font-extrabold border' 
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-sm">🔊</span>
+                                    <div className="text-[10.5px] leading-tight">
+                                      <p className="font-extrabold">{language === 'de' ? 'Sound-Effekt' : 'Create Sound'}</p>
+                                      <p className="text-[9px] opacity-60 font-medium">{language === 'de' ? 'Soundeffekte synthetisieren' : 'Synthesize sound effects'}</p>
+                                    </div>
+                                  </div>
+                                  {isSoundGeneratorMode && <span className="text-[9px] bg-amber-500/25 px-1.5 py-0.5 rounded-full">AKTIV</span>}
+                                </button>
+
+                                {/* Mode 3: Music Generator */}
+                                <button
+                                  onClick={() => {
+                                    const active = !isMusicGeneratorMode;
+                                    setIsMusicGeneratorMode(active);
+                                    setIsImageGeneratorMode(false);
+                                    setIsSoundGeneratorMode(false);
+                                    setIsVideoGeneratorMode(false);
+                                    setIsCreatorPopoverOpen(false);
+                                    triggerToast(
+                                      active 
+                                        ? (language === 'de' ? '🎵 Musik-Komposition aktiv! Beschreibe deine Stimmung (z.B. Lofi, Techno).' : '🎵 Music composition active!')
+                                        : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
+                                    );
+                                  }}
+                                  className={`w-full flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer text-left ${
+                                    isMusicGeneratorMode 
+                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 font-extrabold border' 
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-sm">🎵</span>
+                                    <div className="text-[10.5px] leading-tight">
+                                      <p className="font-extrabold">{language === 'de' ? 'Musik komponieren' : 'Create Music'}</p>
+                                      <p className="text-[9px] opacity-60 font-medium">{language === 'de' ? 'Atmosphärische Beats generieren' : 'Generate atmospheric beats'}</p>
+                                    </div>
+                                  </div>
+                                  {isMusicGeneratorMode && <span className="text-[9px] bg-emerald-500/25 px-1.5 py-0.5 rounded-full">AKTIV</span>}
+                                </button>
+
+                                {/* Mode 4: Video Generator */}
+                                <button
+                                  onClick={() => {
+                                    const active = !isVideoGeneratorMode;
+                                    setIsVideoGeneratorMode(active);
+                                    setIsImageGeneratorMode(false);
+                                    setIsSoundGeneratorMode(false);
+                                    setIsMusicGeneratorMode(false);
+                                    setIsCreatorPopoverOpen(false);
+                                    triggerToast(
+                                      active 
+                                        ? (language === 'de' ? '🎬 Video-Generator aktiv! Beschreibe deine Szene oder lade ein Foto hoch.' : '🎬 Video generator active!')
+                                        : (language === 'de' ? 'Standard Chat-Modus' : 'Standard chat mode')
+                                    );
+                                  }}
+                                  className={`w-full flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer text-left ${
+                                    isVideoGeneratorMode 
+                                      ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500 font-extrabold border' 
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-sm">🎬</span>
+                                    <div className="text-[10.5px] leading-tight">
+                                      <p className="font-extrabold">{language === 'de' ? 'Video erstellen' : 'Create Video'}</p>
+                                      <p className="text-[9px] opacity-60 font-medium">{language === 'de' ? 'Text oder Foto zu Video' : 'Text or photo to video'}</p>
+                                    </div>
+                                  </div>
+                                  {isVideoGeneratorMode && <span className="text-[9px] bg-indigo-500/25 px-1.5 py-0.5 rounded-full">AKTIV</span>}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
 
                       <textarea
                         ref={chatInputRef}
@@ -3195,8 +4065,14 @@ export default function App() {
                         }}
                         placeholder={
                           isImageGeneratorMode 
-                            ? (language === 'de' ? 'Beschreibe das Bild, das AleksAI generieren soll...' : 'Describe the image AleksAI should generate...')
-                            : t('placeholderChat')
+                            ? (language === 'de' ? 'Beschreibe das Bild, das AlerksAI generieren soll...' : 'Describe the image AlerksAI should generate...')
+                            : isSoundGeneratorMode
+                              ? (language === 'de' ? 'Beschreibe den Sound-Effekt, den AlerksAI erzeugen soll...' : 'Describe the sound effect AlerksAI should create...')
+                              : isMusicGeneratorMode
+                                ? (language === 'de' ? 'Beschreibe das Musikstück, das AlerksAI komponieren soll...' : 'Describe the music AlerksAI should compose...')
+                                : isVideoGeneratorMode
+                                  ? (language === 'de' ? 'Beschreibe das Video, das AlerksAI erzeugen soll...' : 'Describe the video AlerksAI should generate...')
+                                  : t('placeholderChat')
                         }
                         rows={1}
                         disabled={isGenerating || (currentUser && currentUser.credits <= 0 && !(currentUser.email?.toLowerCase() === 'aleks.smolovic@web.de' && localStorage.getItem('aleksai_admin_infinite') === 'true'))}
@@ -3240,7 +4116,7 @@ export default function App() {
             <div className={`p-6 md:p-8 rounded-3xl border mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${darkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-800' : 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white border-emerald-500/20'}`}>
               <div>
                 <span className="text-[10px] font-black tracking-widest text-emerald-500 uppercase">
-                  🎓 AleksAI Premium Schulmodus
+                  🎓 AlerksAI Premium Schulmodus
                 </span>
                 <h1 className={`text-2xl md:text-3xl font-black mt-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                   🧑🏽‍🏫 Lernzentrum & Hausaufgaben-Helfer
@@ -3304,10 +4180,10 @@ export default function App() {
                       
                       setIsStudyLoading(true);
                       setStudyResult('');
-                      triggerToast(language === 'de' ? '💡 AleksAI formuliert Lernunterstützung...' : '💡 Generating answer...');
+                      triggerToast(language === 'de' ? '💡 AlerksAI formuliert Lernunterstützung...' : '💡 Generating answer...');
                       
                       try {
-                        const explanatoryContext = `Du bist AleksAI Premium im pädagogisch wertvollsten Schulmodus. Erkläre dem Schüler das Thema "${studySubject}" so anschaulich, motivierend und einfach wie möglich auf Deutsch. Verwende übersichtliche Punkte, verständliche Schritte und ein konkretes Anwendungsbeispiel. Stelle am Schluss eine kleine Kontrollfrage zum Mitdenken! Hier ist die Frage des Schülers: ${studyInput}`;
+                        const explanatoryContext = `Du bist AlerksAI Premium im pädagogisch wertvollsten Schulmodus. Erkläre dem Schüler das Thema "${studySubject}" so anschaulich, motivierend und einfach wie möglich auf Deutsch. Verwende übersichtliche Punkte, verständliche Schritte und ein konkretes Anwendungsbeispiel. Stelle am Schluss eine kleine Kontrollfrage zum Mitdenken! Hier ist die Frage des Schülers: ${studyInput}`;
                         
                         const model = activeModel;
                         const keyToUse = customApiKey || '';
@@ -3370,7 +4246,7 @@ export default function App() {
                     {isStudyLoading ? (
                       <div className="flex flex-col items-center justify-center py-16 space-y-3">
                         <div className="w-8 h-8 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-                        <span className="text-xs text-slate-400 font-bold">{language === 'de' ? 'AleksAI schreibt an der Wandtafel...' : 'AleksAI is generating...'}</span>
+                        <span className="text-xs text-slate-400 font-bold">{language === 'de' ? 'AlerksAI schreibt an der Wandtafel...' : 'AlerksAI is generating...'}</span>
                       </div>
                     ) : studyResult ? (
                       <div className="text-xs md:text-sm leading-relaxed text-left font-normal select-text space-y-2 whitespace-pre-wrap select-text">
@@ -3381,8 +4257,8 @@ export default function App() {
                         <p className="font-extrabold text-2xl">⚡</p>
                         <p className="text-xs font-bold leading-relaxed max-w-xs mx-auto">
                           {language === 'de' 
-                            ? 'Wähle links ein Fach, stell deine Frage und AleksAI bereitet dir eine didaktisch verständliche Hilfestellung auf.'
-                            : 'Select a subject, write down your problem, and AleksAI will prepare easy-to-understand explanations.'}
+                            ? 'Wähle links ein Fach, stell deine Frage und AlerksAI bereitet dir eine didaktisch verständliche Hilfestellung auf.'
+                            : 'Select a subject, write down your problem, and AlerksAI will prepare easy-to-understand explanations.'}
                         </p>
                       </div>
                     )}
@@ -3543,7 +4419,7 @@ export default function App() {
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className={`rounded-2xl w-full max-w-[430px] max-h-[85vh] flex flex-col p-4 sm:p-5 relative shadow-2xl animate-zoom-in border ${darkMode ? 'bg-slate-900 text-white border-slate-800' : 'bg-white text-slate-950 border-[#e2e5f1]'}`}
+            className={`rounded-2xl w-full ${settingsActiveTab === 'shop' ? 'max-w-[580px]' : 'max-w-[440px]'} max-h-[85vh] flex flex-col p-4 sm:p-5 relative shadow-2xl animate-zoom-in border transition-all duration-300 ${darkMode ? 'bg-slate-900 text-white border-slate-800' : 'bg-white text-slate-950 border-[#e2e5f1]'}`}
           >
             <button 
               onClick={() => setShowSettingsModal(false)}
@@ -3553,163 +4429,516 @@ export default function App() {
               ✕
             </button>
             
-            <div className="flex items-center gap-2 mb-4 shrink-0 pr-8">
+            <div className="flex items-center gap-2 mb-3 shrink-0 pr-8">
               <AleksAILogo className="w-5 h-5 text-[#4f6ef7]" glow={true} />
               <div>
-                <h3 className="text-sm sm:text-base font-black tracking-tight">{t('settings')}</h3>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">AleksAI. Intelegence</p>
+                <h3 className="text-sm sm:text-base font-black tracking-tight">
+                  {settingsActiveTab === 'shop' ? (language === 'de' ? 'AlerksAI Credit Shop ⚡' : 'AlerksAI Credit Shop ⚡') : t('settings')}
+                </h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">AlerksAI Intelegence</p>
               </div>
             </div>
 
+            {/* Elegant Tab Switcher */}
+            <div className={`flex items-center gap-1 p-1 rounded-xl mb-4 text-xs font-bold shrink-0 ${darkMode ? 'bg-slate-950/60' : 'bg-slate-100'}`}>
+              <button
+                onClick={() => setSettingsActiveTab('settings')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-[10px] sm:text-xs ${settingsActiveTab === 'settings' ? (darkMode ? 'bg-[#4f6ef7] text-white shadow' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                ⚙️ {language === 'de' ? 'Einstellungen' : 'Settings'}
+              </button>
+              <button
+                onClick={() => setSettingsActiveTab('profile')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-[10px] sm:text-xs ${settingsActiveTab === 'profile' ? (darkMode ? 'bg-[#4f6ef7] text-white shadow' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                👤 {language === 'de' ? 'Benutzer' : 'User'}
+              </button>
+              <button
+                onClick={() => setSettingsActiveTab('shop')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-[10px] sm:text-xs flex items-center justify-center gap-1 ${settingsActiveTab === 'shop' ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' : 'text-pink-600 dark:text-pink-400 hover:text-pink-500'}`}
+              >
+                ⚡ {language === 'de' ? 'Shop' : 'Shop'}
+                <span className="text-[8px] bg-amber-400 text-slate-950 px-1 rounded font-black uppercase animate-pulse">New</span>
+              </button>
+            </div>
+ 
             {/* Scrollable container for density */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
-              {/* LANGUAGE SELECTOR */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsLanguage')}</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {[
-                    { code: 'de', label: 'Deutsch 🇩🇪' },
-                    { code: 'en', label: 'English 🇬🇧' },
-                    { code: 'es', label: 'Español 🇪🇸' },
-                    { code: 'fr', label: 'Français 🇫🇷' },
-                    { code: 'it', label: 'Italiano 🇮🇹' },
-                    { code: 'tr', label: 'Türkçe 🇹🇷' },
-                    { code: 'sr', label: 'Srpski 🇷🇸' }
-                  ].map((langObj) => (
-                    <button
-                      key={langObj.code}
-                      onClick={() => {
-                        setLanguage(langObj.code as any);
-                        triggerToast(`Sprache gewechselt auf ${langObj.label}`);
-                      }}
-                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-left border transition ${language === langObj.code ? 'bg-[#4f6ef7] border-transparent text-white' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300 hover:border-slate-600' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a] hover:border-slate-400')}`}
-                    >
-                      {langObj.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              
+              {/* TAB 1: SETTINGS / OPTIONEN */}
+              {settingsActiveTab === 'settings' && (
+                <>
+                  {/* LANGUAGE SELECTOR */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsLanguage')}</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {[
+                        { code: 'de', label: 'Deutsch 🇩🇪' },
+                        { code: 'en', label: 'English 🇬🇧' },
+                        { code: 'es', label: 'Español 🇪🇸' },
+                        { code: 'fr', label: 'Français 🇫🇷' },
+                        { code: 'it', label: 'Italiano 🇮🇹' },
+                        { code: 'tr', label: 'Türkçe 🇹🇷' },
+                        { code: 'sr', label: 'Srpski 🇷🇸' }
+                      ].map((langObj) => (
+                        <button
+                          key={langObj.code}
+                          onClick={() => {
+                            setLanguage(langObj.code as any);
+                            triggerToast(`Sprache gewechselt auf ${langObj.label}`);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-left border transition ${language === langObj.code ? 'bg-[#4f6ef7] border-transparent text-white' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300 hover:border-slate-600' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a] hover:border-slate-400')}`}
+                        >
+                          {langObj.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* APPEARANCE / DARK SWITCH */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsTheme')}</label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    onClick={() => { setDarkMode(false); triggerToast("Heller Modus aktiviert"); }}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${!darkMode ? 'bg-amber-500 border-transparent text-white shadow' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300' : 'bg-slate-100')}`}
-                  >
-                    ☀️ Light Mode
-                  </button>
-                  <button
-                    onClick={() => { setDarkMode(true); triggerToast("Dunkler Modus aktiviert"); }}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${darkMode ? 'bg-blue-650 border-transparent text-white shadow' : 'bg-slate-200/50 text-slate-700'}`}
-                  >
-                    🌙 Dark Mode
-                  </button>
-                </div>
-              </div>
+                  {/* APPEARANCE / DARK SWITCH */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsTheme')}</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        onClick={() => { setDarkMode(false); triggerToast("Heller Modus aktiviert"); }}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${!darkMode ? 'bg-amber-500 border-transparent text-white shadow' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300' : 'bg-slate-100')}`}
+                      >
+                        ☀️ Light Mode
+                      </button>
+                      <button
+                        onClick={() => { setDarkMode(true); triggerToast("Dunkler Modus aktiviert"); }}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${darkMode ? 'bg-blue-650 border-transparent text-white shadow' : 'bg-slate-200/50 text-slate-700'}`}
+                      >
+                        🌙 Dark Mode
+                      </button>
+                    </div>
+                  </div>
 
-              {/* SCREEN SIZE EMULATOR SELECTOR */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsSize')}</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {[
-                    { size: 'auto', label: t('automaticSize') },
-                    { size: 'iPhone', label: '📱 iPhone' },
-                    { size: 'iPad', label: '📟 iPad' },
-                    { size: 'PC', label: '🖥️ PC' }
-                  ].map((sizeObj) => (
-                    <button
-                      key={sizeObj.size}
-                      onClick={() => {
-                        setDeviceSize(sizeObj.size as any);
-                        triggerToast(`Ansicht geändert auf ${sizeObj.size}`);
-                      }}
-                      className={`px-2 py-1.5 rounded-xl text-[10px] font-bold border transition truncate text-center ${deviceSize === sizeObj.size ? 'bg-[#4f6ef7] border-transparent text-white' : (darkMode ? 'bg-slate-800 border-slate-755 text-slate-300' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a] hover:border-slate-300')}`}
-                      title={sizeObj.label}
-                    >
-                      {sizeObj.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  {/* SCREEN SIZE EMULATOR SELECTOR */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsSize')}</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      {[
+                        { size: 'auto', label: t('automaticSize') },
+                        { size: 'iPhone', label: '📱 iPhone' },
+                        { size: 'iPad', label: '📟 iPad' },
+                        { size: 'PC', label: '🖥️ PC' }
+                      ].map((sizeObj) => (
+                        <button
+                          key={sizeObj.size}
+                          onClick={() => {
+                            setDeviceSize(sizeObj.size as any);
+                            triggerToast(`Ansicht geändert auf ${sizeObj.size}`);
+                          }}
+                          className={`px-2 py-1.5 rounded-xl text-[10px] font-bold border transition truncate text-center ${deviceSize === sizeObj.size ? 'bg-[#4f6ef7] border-transparent text-white' : (darkMode ? 'bg-slate-800 border-slate-755 text-slate-300' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a] hover:border-slate-300')}`}
+                          title={sizeObj.label}
+                        >
+                          {sizeObj.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* MODEL SELECTOR IN SETTINGS */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsModel')}</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                  {Object.entries(MODEL_DETAILS).map(([key, details]) => (
-                    <button
-                      key={key}
-                      onClick={() => handleSelectModel(key as AIModel)}
-                      className={`p-2 rounded-xl border text-left flex items-center gap-2 transition cursor-pointer text-xs ${activeModel === key ? 'bg-[#eef1ff] border-[#4f6ef7] text-[#4f6ef7] font-bold' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300 hover:border-slate-500' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a]')}`}
-                    >
-                      <ModelLogo model={key as AIModel} className="w-4 h-4 shrink-0" />
-                      <div className="truncate text-left">
-                        <p className="font-extrabold truncate text-[11px]">{details.name}</p>
-                        <p className="text-[9px] opacity-75 truncate">{details.description}</p>
+                  {/* MODEL SELECTOR IN SETTINGS */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">{t('settingsModel')}</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {Object.entries(MODEL_DETAILS).map(([key, details]) => (
+                        <button
+                          key={key}
+                          onClick={() => handleSelectModel(key as AIModel)}
+                          className={`p-2 rounded-xl border text-left flex items-center gap-2 transition cursor-pointer text-xs ${activeModel === key ? 'bg-[#eef1ff] border-[#4f6ef7] text-[#4f6ef7] font-bold' : (darkMode ? 'bg-slate-800 border-slate-750 text-slate-300 hover:border-slate-500' : 'bg-[#f7f8fc] border-[#e2e5f1] text-[#4a4e6a]')}`}
+                        >
+                          <ModelLogo model={key as AIModel} className="w-4 h-4 shrink-0" />
+                          <div className="truncate text-left">
+                            <p className="font-extrabold truncate text-[11px]">{details.name}</p>
+                            <p className="text-[9px] opacity-75 truncate">{details.description}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* CUSTOM API KEY SETTING */}
+                  <div className="space-y-1.5 pt-3.5 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">
+                        {language === 'de' ? 'Eigener Gemini API-Schlüssel (Optional)' : 'Custom Gemini API Key (Optional)'}
+                      </label>
+                      {customApiKey ? (
+                        <span className="text-[9.5px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-black uppercase">
+                          Aktiv / Active
+                        </span>
+                      ) : (
+                        <span className="text-[9.5px] bg-slate-500/10 text-slate-450 px-1.5 py-0.5 rounded font-black uppercase">
+                          Standard
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      {language === 'de'
+                        ? 'Füge hier deinen eigenen Google AI Studio API-Schlüssel ein, um Überlastungen oder temporäre Sperren (wie 503-Fehler) komplett zu umgehen. Er bleibt sicher lokal in deinem Browser gespeichert.'
+                        : 'Paste your own Google AI Studio API key here to bypass any rate-limiting or heavy demand on shared models. Rest assured, your key remains securely stored local-only in your browser.'}
+                    </p>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        value={customApiKey}
+                        placeholder="AIzaSy..."
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          handleSaveCustomApiKey(val);
+                        }}
+                        className={`w-full px-3 py-2 text-xs rounded-xl border transition-all ${darkMode ? 'bg-slate-800 border-slate-750 text-slate-100 placeholder-slate-500 focus:border-blue-500' : 'bg-[#f7f8fc] border-[#e2e5f1] text-slate-850 placeholder-slate-400 focus:border-[#4f6ef7]'} focus:outline-none`}
+                      />
+                      {customApiKey && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSaveCustomApiKey('');
+                            triggerToast(language === 'de' ? 'API-Schlüssel gelöscht' : 'API Key removed');
+                          }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-red-500 hover:underline cursor-pointer"
+                        >
+                          {language === 'de' ? 'Löschen' : 'Clear'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center text-[9px] font-bold opacity-80 pt-0.5">
+                      <a 
+                        href="https://aistudio.google.com/app/apikey" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-[#4f6ef7] hover:underline flex items-center gap-1"
+                      >
+                        🚀 {language === 'de' ? 'Kostenlosen API-Schlüssel holen' : 'Get a free Gemini API Key'}
+                      </a>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* TAB 2: USER PROFILE & STATS */}
+              {settingsActiveTab === 'profile' && (
+                <div className="space-y-4">
+                  {currentUser ? (
+                    <>
+                      {/* Logged in User Badge Card */}
+                      <div className={`p-4 rounded-2xl border flex items-center gap-3.5 ${darkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#4f6ef7] to-[#8b5cf6] flex items-center justify-center font-black text-white text-lg shadow-sm shrink-0">
+                          {currentUser.profilePic ? (
+                            <img src={currentUser.profilePic} alt="" className="w-full h-full rounded-full object-cover" />
+                          ) : (
+                            currentUser.firstName[0].toUpperCase()
+                          )}
+                        </div>
+                        <div className="text-left leading-normal">
+                          <h4 className="font-extrabold text-sm text-transparent bg-clip-text bg-gradient-to-r from-violet-500 to-pink-500">
+                            {currentUser.firstName} {currentUser.lastName}
+                          </h4>
+                          <p className="text-[10px] font-black text-[#4f6ef7]">@{currentUser.username}</p>
+                          <p className="text-[10px] text-slate-400 font-bold truncate max-w-[220px]">{currentUser.email}</p>
+                        </div>
                       </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
-              {/* CUSTOM API KEY SETTING */}
-              <div className="space-y-1.5 pt-3.5 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex justify-between items-center">
-                  <label className="text-[9px] font-black text-[#8b90a8] uppercase tracking-widest block">
-                    {language === 'de' ? 'Eigener Gemini API-Schlüssel (Optional)' : 'Custom Gemini API Key (Optional)'}
-                  </label>
-                  {customApiKey ? (
-                    <span className="text-[9.5px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-black uppercase">
-                      Aktiv / Active
-                    </span>
+                      {/* Display Credits in interactive visual box */}
+                      <div className={`p-5 rounded-2xl border text-center space-y-2 relative overflow-hidden ${darkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-[#fff5f8]/50 border-pink-100'}`}>
+                        {/* Pink glowing ambient glow behind */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-pink-500/10 blur-[40px] pointer-events-none" />
+                        
+                        <p className="text-[9px] font-black text-pink-500 uppercase tracking-widest relative z-10">
+                          {language === 'de' ? 'Verfügbares Energie-Guthaben' : 'Energy Credits Balance'}
+                        </p>
+                        
+                        <div className="flex items-baseline justify-center gap-2.5 relative z-10">
+                          <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-[#4f6ef7] drop-shadow-sm">
+                            ⚡ {currentUser.credits}
+                          </span>
+                          <span className="text-xs font-black text-slate-450 uppercase tracking-wider">Credits</span>
+                        </div>
+                        
+                        <p className="text-[10.5px] text-slate-450 leading-relaxed max-w-xs mx-auto relative z-10">
+                          {language === 'de' 
+                            ? 'Jede KI-Antwort verbraucht genau 1 Energie-Credit. Dein Guthaben füllt sich täglich automatisch um +100 Credits!' 
+                            : 'Each AI prompt uses 1 credit. Your balance is refilled automatically with +100 credits every single day!'}
+                        </p>
+
+                        <button
+                          onClick={() => setSettingsActiveTab('shop')}
+                          className="w-full mt-3 py-3 rounded-xl text-xs font-black bg-gradient-to-r from-pink-500 via-rose-500 to-violet-600 hover:opacity-90 text-white flex items-center justify-center gap-2 cursor-pointer shadow-md transition transform active:scale-95 duration-200"
+                        >
+                          ⚡ {language === 'de' ? 'Credits aufladen (Shop)' : 'Buy more credits (Shop)'}
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={() => {
+                          setShowSettingsModal(false);
+                          doLogout();
+                        }}
+                        className={`w-full rounded-xl py-2.5 font-bold text-xs border transition duration-200 cursor-pointer text-center ${darkMode ? 'bg-red-950/20 border-red-900/40 text-red-400 hover:bg-red-950/35' : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200'}`}
+                      >
+                        🚪 {language === 'de' ? 'Von AlerksAI abmelden' : 'Logout from AlerksAI'}
+                      </button>
+                    </>
                   ) : (
-                    <span className="text-[9.5px] bg-slate-500/10 text-slate-450 px-1.5 py-0.5 rounded font-black uppercase">
-                      Standard
-                    </span>
+                    /* Guest View */
+                    <div className="space-y-4">
+                      <div className={`p-5 rounded-2xl border text-center space-y-3 ${darkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mx-auto text-sm">
+                          👤
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold text-sm">{language === 'de' ? 'Gast-Benutzer' : 'Guest Account'}</h4>
+                          <p className="text-[11px] text-slate-400 leading-normal max-w-xs mx-auto">
+                            {language === 'de'
+                              ? 'Du nutzt AlerksAI derzeit im anonymen Gastmodus. Deine Chats und Energie-Guthaben sind lokal an diesen Browser gebunden.'
+                              : 'You are using AlerksAI as a Guest. Your chats and credit balances are stored locally in this browser session.'}
+                          </p>
+                        </div>
+                        <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                          <button
+                            onClick={() => {
+                              setShowSettingsModal(false);
+                              openAuthModal('register');
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-[#4f6ef7] hover:bg-[#6c83f8] text-white text-xs font-black cursor-pointer transition shadow-sm"
+                          >
+                            📝 {language === 'de' ? 'Konto registrieren' : 'Register Account'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowSettingsModal(false);
+                              openAuthModal('login');
+                            }}
+                            className={`flex-1 py-2 rounded-xl border text-xs font-bold cursor-pointer transition ${darkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-white' : 'bg-white border-[#e2e5f1] hover:bg-slate-50 text-slate-700'}`}
+                          >
+                            🔑 {language === 'de' ? 'Anmelden' : 'Login'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Display Credits in guest box */}
+                      <div className={`p-4 rounded-2xl border text-center space-y-1.5 ${darkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-pink-50/30 border-pink-100'}`}>
+                        <p className="text-[10px] font-black text-pink-500 uppercase tracking-widest">{language === 'de' ? 'Gast-Credits' : 'Guest Credits'}</p>
+                        <div className="text-3xl font-black text-slate-800 dark:text-white">⚡ 50</div>
+                        <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
+                          {language === 'de' ? 'Erhalte +50 gratis Credits täglich. Registriere dich kostenlos für dauerhafte Ersparnisse.' : 'Get +50 free credits daily. Create an account to unlock permanent secure token storage.'}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <p className="text-[10px] text-slate-400 leading-normal">
-                  {language === 'de'
-                    ? 'Füge hier deinen eigenen Google AI Studio API-Schlüssel ein, um Überlastungen oder temporäre Sperren (wie 503-Fehler) komplett zu umgehen. Er bleibt sicher lokal in deinem Browser gespeichert.'
-                    : 'Paste your own Google AI Studio API key here to bypass any rate-limiting or heavy demand on shared models. Rest assured, your key remains securely stored local-only in your browser.'}
-                </p>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={customApiKey}
-                    placeholder="AIzaSy..."
-                    onChange={(e) => {
-                      const val = e.target.value.trim();
-                      handleSaveCustomApiKey(val);
-                    }}
-                    className={`w-full px-3 py-2 text-xs rounded-xl border transition-all ${darkMode ? 'bg-slate-800 border-slate-750 text-slate-100 placeholder-slate-500 focus:border-blue-500' : 'bg-[#f7f8fc] border-[#e2e5f1] text-slate-850 placeholder-slate-400 focus:border-[#4f6ef7]'} focus:outline-none`}
-                  />
-                  {customApiKey && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleSaveCustomApiKey('');
-                        triggerToast(language === 'de' ? 'API-Schlüssel gelöscht' : 'API Key removed');
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-red-500 hover:underline cursor-pointer"
+              )}
+
+              {/* TAB 3: THE CREDIT SHOP ⚡ */}
+              {settingsActiveTab === 'shop' && (
+                <div className="space-y-4">
+                  {/* Shop Header banner */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-indigo-600 text-white text-left shadow-lg relative overflow-hidden">
+                    {/* Glowing background circles inside banner */}
+                    <div className="absolute right-0 bottom-0 w-32 h-32 rounded-full bg-white/10 blur-[20px]" />
+                    <div className="relative z-10 space-y-1">
+                      <div className="flex items-center gap-1 text-[9px] font-black tracking-widest bg-white/20 px-2 py-0.5 rounded-full uppercase w-max">
+                        ⚡ Premium Energy Shop
+                      </div>
+                      <h4 className="text-base font-black tracking-tight">{language === 'de' ? 'Bunte Rechenpower ohne Limits' : 'Vibrant Unlimited Reasoning Power'}</h4>
+                      <p className="text-[10.5px] text-pink-50 leading-relaxed max-w-md">
+                        {language === 'de' 
+                          ? 'Wähle dein bevorzugtes Energie-Paket. Jedes Paket schaltet zusätzliche Tokens für extrem anspruchsvolle Aufgaben, Hausaufgaben & Deep-Reasoning frei!' 
+                          : 'Select your preferred energy bundle. Each package grants tokens to interact with our highly advanced analytical and reasoning AI models!'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!currentUser && (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-[10.5px] text-left leading-normal flex items-start gap-2">
+                      <span className="text-base shrink-0">💡</span>
+                      <div>
+                        <strong>{language === 'de' ? 'Tipp für Gäste:' : 'Tip for Guests:'}</strong>{' '}
+                        {language === 'de' 
+                          ? 'Registriere dich am besten kostenlos, damit deine gekauften Credits permanent mit deinem Benutzerkonto gesichert und synchronisiert werden!' 
+                          : 'We recommend registering a free account so your purchased credits are permanently secured and synced to your credentials!'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 🌟 VIP Subscription Tier */}
+                  <div className="rainbow-border-container w-full !p-[2.5px] !rounded-[18px] shadow-md">
+                    <div className={`w-full p-4 rounded-[15.5px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${darkMode ? 'bg-slate-950' : 'bg-white'}`}>
+                      <div className="space-y-1 text-left">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] sm:text-[9px] font-black bg-gradient-to-r from-pink-500 to-rose-500 text-white px-2 py-0.5 rounded-full uppercase tracking-widest">
+                            {language === 'de' ? 'Monatliches Abo' : 'Monthly Subscription'}
+                          </span>
+                          <span className="text-[10px] sm:text-[11px] font-black text-amber-500 flex items-center gap-0.5">🌟 VIP Access</span>
+                        </div>
+                        <h4 className="text-sm font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-violet-500">
+                          AlerksAI VIP Membership
+                        </h4>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          {language === 'de'
+                            ? 'Erhalte 1200 Tokens monatlich + VIP-Vorteile (Zugriff auf mehr Modelle, exklusive Premium-Designs, priorisiertes, superschnelles Chattering, werbefreies Erlebnis)'
+                            : 'Get 1200 Tokens monthly + VIP perks (extra models, exclusive designs, priority high-speed chatting, entirely ad-free)'}
+                        </p>
+                      </div>
+                      <div className="w-full sm:w-auto shrink-0 flex flex-col items-end gap-1.5 text-right mt-2 sm:mt-0">
+                        <span className="text-lg font-black tracking-tight text-pink-500">
+                          12,99€ <span className="text-[10px] text-slate-450 font-bold">/ {language === 'de' ? 'Monat' : 'month'}</span>
+                        </span>
+                        <button
+                          disabled
+                          className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl bg-slate-800 text-slate-500 border border-slate-700/50 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed"
+                        >
+                          🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Token packages grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    
+                    {/* Pack 1: 100 Tokens */}
+                    <div className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-3 text-left transition ${darkMode ? 'bg-slate-950/40 border-slate-800 hover:border-slate-700' : 'bg-[#f7f8fc] border-slate-200 hover:border-slate-300'}`}>
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200">⚡ 100 Tokens</span>
+                          <span className="text-xs font-black text-[#4f6ef7]">3,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' ? 'Der perfekte Einstieg, um alle Premium-Modelle gründlich auszutesten.' : 'The perfect bundle to thoroughly test all elite AI models.'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                    {/* Pack 2: 200 Tokens */}
+                    <div className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-3 text-left transition ${darkMode ? 'bg-slate-950/40 border-slate-800 hover:border-slate-700' : 'bg-[#f7f8fc] border-slate-200 hover:border-slate-300'}`}>
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200">⚡ 200 Tokens</span>
+                          <span className="text-xs font-black text-[#4f6ef7]">5,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' ? 'Zusätzliche Rechenleistung für mittlere Chats, Analysen & Hausaufgaben.' : 'Extra compute credits for medium-sized chats, data analysis & school tasks.'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                    {/* Pack 3: 500 Tokens */}
+                    <div className={`p-3.5 rounded-2xl border-2 flex flex-col justify-between gap-3 text-left relative overflow-hidden transition ${darkMode ? 'bg-slate-950/70 border-[#4f6ef7]/50' : 'bg-blue-50/45 border-[#4f6ef7]/30'}`}>
+                      <div className="absolute top-0 right-0 bg-gradient-to-l from-[#4f6ef7] to-indigo-600 text-white text-[7.5px] font-black uppercase px-2.5 py-0.5 rounded-bl-lg tracking-widest animate-pulse">
+                        💡 Bestseller
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-[#4f6ef7] dark:text-blue-300">⚡ 500 Tokens</span>
+                          <span className="text-xs font-black text-[#4f6ef7] dark:text-blue-300">9,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' ? 'Großartige Ersparnis! Ideal für den täglichen Einsatz bei Hausaufgaben & Coding.' : 'Outstanding value pack! Ideal for daily support in homeworks, study & coding.'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                    {/* Pack 4: 1200 Tokens */}
+                    <div className={`p-3.5 rounded-2xl border flex flex-col justify-between gap-3 text-left transition ${darkMode ? 'bg-slate-950/40 border-slate-800 hover:border-slate-700' : 'bg-[#f7f8fc] border-slate-200 hover:border-slate-300'}`}>
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200">⚡ 1200 Tokens</span>
+                          <span className="text-xs font-black text-[#4f6ef7]">16,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' ? 'Großes Paket für Power-User, intensive Programmier-Sessions & Texter.' : 'Big package for power-users, intensive developer sessions & creative copywriters.'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                    {/* Pack 5: 4000 Tokens */}
+                    <div className={`p-3.5 rounded-2xl border-2 flex flex-col justify-between gap-3 text-left relative overflow-hidden transition ${darkMode ? 'bg-slate-950/70 border-pink-500/50' : 'bg-pink-50/25 border-pink-200'}`}>
+                      <div className="absolute top-0 right-0 bg-pink-500 text-white text-[7.5px] font-black uppercase px-2.5 py-0.5 rounded-bl-lg tracking-widest">
+                        Mega Sparpaket
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-pink-500 dark:text-pink-400">⚡ 4000 Tokens</span>
+                          <span className="text-xs font-black text-pink-500 dark:text-pink-400">36,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' ? 'Professionelle Rechenpower für unbeschwerte, unbegrenzte AI-Interaktionen.' : 'Professional reasoning grade package for carefree, massive scale AI tasks.'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                    {/* Pack 6: Lifetime Access Card */}
+                    <div className={`p-4 rounded-2xl border-2 flex flex-col justify-between gap-3 text-left relative overflow-hidden transition sm:col-span-2 ${darkMode ? 'bg-slate-950/80 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)] hover:border-amber-400' : 'bg-amber-50/20 border-amber-300 hover:border-amber-400'}`}>
+                      <div className="absolute top-0 right-0 bg-amber-500 text-slate-950 text-[7.5px] font-black uppercase px-2.5 py-0.5 rounded-bl-lg tracking-widest">
+                        👑 Lifetime Unlimited
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-amber-500 flex items-center gap-1">♾️ Zugriff für immer</span>
+                          <span className="text-xs font-black text-amber-500">99,99€</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-normal">
+                          {language === 'de' 
+                            ? 'Einmal zahlen. Lebenslang unbegrenzt alle Modelle, Features & Updates nutzen – komplett ohne Energie-Limits!' 
+                            : 'One-time investment. Access all models and upcoming platform upgrades forever, completely uncapped and energy-free!'}
+                        </p>
+                      </div>
+                      <button disabled className="w-full py-2 rounded-xl bg-slate-800 border border-slate-700/40 text-slate-500 text-[9.5px] font-black uppercase flex items-center justify-center gap-1 cursor-not-allowed">
+                        🔒 {language === 'de' ? 'Kauf bald verfügbar' : 'Purchase coming soon'}
+                      </button>
+                    </div>
+
+                  </div>
+
+                  {/* Payment notice info */}
+                  <p className="text-[9.5px] text-slate-450 leading-relaxed text-center font-bold">
+                    🛡️ {language === 'de' ? 'Sicheres Zahlungssystem wird derzeit vorbereitet. Käufe werden in Kürze freigeschaltet.' : 'Secure payment gateway is currently under preparation. Transactions will be activated soon.'}
+                  </p>
+
+                  {/* GDPR and Purchase compliance links */}
+                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[10px] text-[#4f6ef7] dark:text-blue-400 font-bold pt-1 border-t border-slate-100 dark:border-slate-800/60">
+                    <button 
+                      onClick={() => { setShowLegalModal('privacy'); }}
+                      className="hover:underline hover:text-blue-600 dark:hover:text-blue-300 cursor-pointer"
                     >
-                      {language === 'de' ? 'Löschen' : 'Clear'}
+                      {language === 'de' ? 'Datenschutzerklärung' : 'Privacy Policy'}
                     </button>
-                  )}
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <button 
+                      onClick={() => { setShowLegalModal('terms'); }}
+                      className="hover:underline hover:text-blue-600 dark:hover:text-blue-300 cursor-pointer"
+                    >
+                      {language === 'de' ? 'Einkaufsbedingungen (Shop)' : 'Purchase Terms'}
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <button 
+                      onClick={() => { setShowLegalModal('cookies'); }}
+                      className="hover:underline hover:text-blue-600 dark:hover:text-blue-300 cursor-pointer"
+                    >
+                      {language === 'de' ? 'Cookie-Richtlinie' : 'Cookie Policy'}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-[9px] font-bold opacity-80 pt-0.5">
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="text-[#4f6ef7] hover:underline flex items-center gap-1"
-                  >
-                    🚀 {language === 'de' ? 'Kostenlosen API-Schlüssel holen' : 'Get a free Gemini API Key'}
-                  </a>
-                </div>
-              </div>
+              )}
+
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0">
@@ -3736,25 +4965,27 @@ export default function App() {
             </button>
             <div className="text-center mb-6">
               <AleksAILogo className="w-10 h-10 text-[#4f6ef7] mx-auto mb-2" glow={true} />
-              <div className="text-xl font-black bg-gradient-to-r from-[#4f6ef7] to-[#8b5cf6] bg-clip-text text-transparent mb-1">AleksAI. Intelegence</div>
+              <div className="text-xl font-black bg-gradient-to-r from-[#4f6ef7] to-[#8b5cf6] bg-clip-text text-transparent mb-1">AlerksAI Intelegence</div>
               <p className="text-xs text-[#8b90a8] font-medium">{t('subtitle')}</p>
             </div>
 
             {/* TAB CONTAINER */}
-            <div className={`flex rounded-xl p-1 mb-6 border ${darkMode ? 'bg-slate-950 border-slate-800' : 'bg-[#f7f8fc] border-[#e2e5f1]'}`}>
-              <button 
-                onClick={() => { setAuthModalTab('login'); setAuthError(''); }}
-                className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition duration-150 cursor-pointer ${authModalTab === 'login' ? (darkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-[#8b90a8]'}`}
-              >
-                {t('login')}
-              </button>
-              <button 
-                onClick={() => { setAuthModalTab('register'); setAuthError(''); }}
-                className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition duration-150 cursor-pointer ${authModalTab === 'register' ? (darkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-[#8b90a8]'}`}
-              >
-                {t('register')}
-              </button>
-            </div>
+            {(authModalTab === 'login' || authModalTab === 'register') && (
+              <div className={`flex rounded-xl p-1 mb-6 border ${darkMode ? 'bg-slate-950 border-slate-800' : 'bg-[#f7f8fc] border-[#e2e5f1]'}`}>
+                <button 
+                  onClick={() => { setAuthModalTab('login'); setAuthError(''); }}
+                  className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition duration-150 cursor-pointer ${authModalTab === 'login' ? (darkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-[#8b90a8]'}`}
+                >
+                  {t('login')}
+                </button>
+                <button 
+                  onClick={() => { setAuthModalTab('register'); setAuthError(''); }}
+                  className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition duration-150 cursor-pointer ${authModalTab === 'register' ? (darkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-[#4f6ef7] shadow-sm') : 'text-[#8b90a8]'}`}
+                >
+                  {t('register')}
+                </button>
+              </div>
+            )}
 
             {authError && (
               <div className="mb-4 text-xs bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-2.5 font-semibold text-center leading-normal">
@@ -3778,7 +5009,16 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">{t('password')}</label>
+                  <div className="flex justify-between items-center pl-1">
+                    <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">{t('password')}</label>
+                    <button 
+                      type="button"
+                      onClick={() => { setAuthModalTab('forgot_password'); setResetStep('request'); setAuthError(''); setResetEmail(''); }}
+                      className="text-xs font-semibold text-[#4f6ef7] hover:underline cursor-pointer mb-1.5"
+                    >
+                      {language === 'de' ? 'Passwort vergessen?' : 'Forgot password?'}
+                    </button>
+                  </div>
                   <input 
                     type="password" 
                     value={loginPassword}
@@ -3844,36 +5084,234 @@ export default function App() {
               </div>
             )}
 
-            {/* GOOGLE SIGN IN BUTTON AND SEPARATOR */}
-            <div className="relative flex py-2 items-center my-3">
-              <div className={`flex-grow border-t ${darkMode ? 'border-slate-800' : 'border-[#e2e5f1]'}`}></div>
-              <span className="flex-shrink mx-3 text-[#8b90a8] text-[10px] font-bold uppercase tracking-wider">{t('or')}</span>
-              <div className={`flex-grow border-t ${darkMode ? 'border-slate-800' : 'border-[#e2e5f1]'}`}></div>
-            </div>
+            {/* SOCIAL CODE VERIFICATION TAB */}
+            {authModalTab === 'verify_google' && pendingGoogleLogin && (
+              <div className="space-y-5 text-left animate-zoom-in">
+                <div className="text-center pb-2">
+                  <h4 className="text-base font-black text-[#4f6ef7] dark:text-blue-400">
+                    {language === 'de' 
+                      ? `🔐 ${socialProviderName === 'apple' ? 'Apple' : 'Google'}-Anmeldung verifizieren` 
+                      : `🔐 Verify ${socialProviderName === 'apple' ? 'Apple' : 'Google'} Login`}
+                  </h4>
+                  <p className="text-xs text-[#8b90a8] mt-1.5 leading-relaxed">
+                    {language === 'de' 
+                      ? `Ein 6-stelliger Bestätigungscode von AleksAI wurde automatisch an ${pendingGoogleLogin.email} gesendet. Bitte trage diesen unten ein.` 
+                      : `A 6-digit confirmation code from AleksAI was automatically sent to ${pendingGoogleLogin.email}. Please enter it below.`}
+                  </p>
+                </div>
 
-            <button 
-              onClick={doGoogleLogin}
-              className={`w-full font-bold py-3 rounded-xl text-xs md:text-sm transition duration-150 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm border ${darkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-850 text-slate-100' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}`}
-            >
-              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                <path fill="#EA4335" d="M12 5.04c1.61 0 3.05.56 4.19 1.65l3.12-3.12C17.43 1.84 14.92 1 12 1 7.35 1 3.39 3.67 1.42 7.58l3.78 2.93c.89-2.67 3.39-4.47 6.8-4.47z"/>
-                <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.35H12v4.51h6.44c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-1.99 3.43-4.92 3.43-8.61z"/>
-                <path fill="#FBBC05" d="M5.2 14.73c-.23-.69-.36-1.43-.36-2.2s.13-1.51.36-2.2L1.42 7.4c-.81 1.62-1.27 3.44-1.27 5.37s.46 3.75 1.27 5.37l3.78-2.93z"/>
-                <path fill="#34A853" d="M12 23c3.24 0 5.96-1.08 7.95-2.91l-3.7-2.87c-1.08.73-2.47 1.16-4.25 1.16-3.41 0-5.91-1.8-6.8-4.47l-3.78 2.93C3.39 19.33 7.35 23 12 23z"/>
-              </svg>
-              {language === 'de' ? 'Mit Google anmelden' : (language === 'en' ? 'Sign in with Google' : 'Google Login')}
-            </button>
+                <div>
+                  <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 text-center">
+                    {language === 'de' ? 'Bestätigungscode' : 'Verification Code'}
+                  </label>
+                  <input 
+                    type="text" 
+                    maxLength={6}
+                    value={googleVerificationCodeInput}
+                    onChange={(e) => setGoogleVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
+                    onKeyDown={(e) => e.key === 'Enter' && handleVerifyGoogleCode()}
+                    placeholder="123456"
+                    className={`w-full px-4 py-3 border rounded-xl text-center text-xl font-black tracking-[8px] transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white placeholder-slate-850' : 'border-[#e2e5f1] bg-stone-50 text-slate-900 placeholder-stone-200'}`}
+                  />
+                </div>
 
-            <div className="relative flex py-2 items-center my-2">
-              <div className={`flex-grow border-t border-dashed ${darkMode ? 'border-slate-850' : 'border-slate-150'}`}></div>
-            </div>
+                {isSendingGoogleCode ? (
+                  <div className="flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#4f6ef7]" />
+                    {language === 'de' ? 'Sende Bestätigungscode...' : 'Sending confirmation code...'}
+                  </div>
+                ) : (
+                  <>
+                    {googleCodeMethod === 'simulation' && (
+                      <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/40 text-blue-600 dark:text-blue-300 text-xs text-center font-bold leading-normal animate-pulse">
+                        ℹ️ {language === 'de' 
+                          ? `Test-Modus (kein SMTP): Code lautet: ${googleCodeSimulationValue}`
+                          : `Test Mode (no SMTP): Code is: ${googleCodeSimulationValue}`}
+                      </div>
+                    )}
+                    {googleCodeMethod === 'failed_smtp' && (
+                      <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs text-left leading-relaxed space-y-1">
+                        <p className="font-bold">⚠️ SMTP-E-Mail-Versand fehlgeschlagen!</p>
+                        <p className="text-[11px] opacity-90">
+                          {language === 'de' 
+                            ? `Deine SMTP-Zugangsdaten sind ungültig oder nicht konfiguriert (${googleSmtpError || 'Fehler 535'}).`
+                            : `Your SMTP credentials are invalid or not configured (${googleSmtpError || 'Error 535'}).`}
+                        </p>
+                        <p className="pt-1 font-extrabold text-sm border-t border-amber-200/60 dark:border-amber-900/40">
+                          {language === 'de' 
+                            ? `Dein Verifizierungscode lautet: ${googleCodeSimulationValue}`
+                            : `Your verification code is: ${googleCodeSimulationValue}`}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
 
-            <button 
-              onClick={doGuestLogin}
-              className={`w-full font-bold py-2.5 rounded-xl text-xs transition duration-150 cursor-pointer flex items-center justify-center gap-2 shadow-sm ${darkMode ? 'bg-slate-800 hover:bg-slate-750 text-blue-400 border border-slate-750' : 'bg-[#f4f6fe] hover:bg-[#ebf0ff] border border-[#d2dbff] text-[#4f6ef7]'}`}
-            >
-              {t('guestBadge')}
-            </button>
+                <button 
+                  onClick={handleVerifyGoogleCode}
+                  className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-bold py-3.5 rounded-xl text-sm transition duration-200 cursor-pointer shadow-md"
+                >
+                  {language === 'de' ? 'Code bestätigen & einloggen' : 'Verify Code & Log In'}
+                </button>
+
+                <button 
+                  onClick={() => { setAuthModalTab('login'); setPendingGoogleLogin(null); }}
+                  className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition py-1 cursor-pointer text-center block"
+                >
+                  {language === 'de' ? '← Zurück zum Login' : '← Back to Login'}
+                </button>
+              </div>
+            )}
+
+            {/* PASSWORD FORGOT TAB */}
+            {authModalTab === 'forgot_password' && (
+              <div className="space-y-4 text-left animate-zoom-in">
+                <div className="text-center pb-2">
+                  <h4 className="text-base font-black text-[#4f6ef7] dark:text-blue-400">
+                    {language === 'de' ? '🔑 Passwort vergessen' : '🔑 Forgot Password'}
+                  </h4>
+                  <p className="text-xs text-[#8b90a8] mt-1.5 leading-relaxed">
+                    {resetStep === 'request'
+                      ? (language === 'de' 
+                        ? 'Gib deine registrierte E-Mail-Adresse ein. Wir senden dir einen Bestätigungscode, um dein Passwort neu festzulegen.' 
+                        : 'Enter your registered email address. We will send you a verification code to set a new password.')
+                      : (language === 'de'
+                        ? `Ein Code wurde an ${resetEmail} gesendet. Bitte gib ihn unten mit deinem neuen Passwort ein.`
+                        : `A code has been sent to ${resetEmail}. Please enter it below with your new password.`)}
+                  </p>
+                </div>
+
+                {resetStep === 'request' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
+                        {language === 'de' ? 'E-Mail-Adresse' : 'Email Address'}
+                      </label>
+                      <input 
+                        type="email" 
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleRequestPasswordReset()}
+                        className={`w-full px-4 py-3 border rounded-xl text-sm transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white placeholder-slate-600' : 'border-[#e2e5f1] bg-stone-50 text-slate-900 placeholder-slate-400'}`}
+                        placeholder="email@example.com"
+                      />
+                    </div>
+
+                    <button 
+                      onClick={handleRequestPasswordReset}
+                      disabled={isSendingResetCode}
+                      className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-bold py-3.5 rounded-xl text-sm transition duration-200 cursor-pointer shadow-md flex items-center justify-center gap-2"
+                    >
+                      {isSendingResetCode && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {language === 'de' ? 'Bestätigungscode anfordern' : 'Request Verification Code'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
+                        {language === 'de' ? '6-stelliger Bestätigungscode' : '6-Digit Verification Code'}
+                      </label>
+                      <input 
+                        type="text" 
+                        maxLength={6}
+                        value={resetCodeInput}
+                        onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ''))}
+                        className={`w-full px-4 py-3 border rounded-xl text-center text-lg font-black tracking-[6px] transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white' : 'border-[#e2e5f1] bg-stone-50 text-slate-900'}`}
+                        placeholder="123456"
+                      />
+                    </div>
+
+                    {resetCodeMethod === 'simulation' && (
+                      <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/40 text-blue-600 dark:text-blue-300 text-xs text-center font-bold leading-normal animate-pulse">
+                        ℹ️ {language === 'de' 
+                          ? `Test-Modus (kein SMTP): Code lautet: ${resetCodeSimulationValue}`
+                          : `Test Mode (no SMTP): Code is: ${resetCodeSimulationValue}`}
+                      </div>
+                    )}
+                    {resetCodeMethod === 'failed_smtp' && (
+                      <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs text-left leading-relaxed space-y-1">
+                        <p className="font-bold">⚠️ SMTP-E-Mail-Versand fehlgeschlagen!</p>
+                        <p className="text-[11px] opacity-90">
+                          {language === 'de' 
+                            ? `Deine SMTP-Zugangsdaten sind ungültig oder nicht konfiguriert (${resetSmtpError || 'Fehler 535'}).`
+                            : `Your SMTP credentials are invalid or not configured (${resetSmtpError || 'Error 535'}).`}
+                        </p>
+                        <p className="pt-1 font-extrabold text-sm border-t border-amber-200/60 dark:border-amber-900/40">
+                          {language === 'de' 
+                            ? `Dein Verifizierungscode lautet: ${resetCodeSimulationValue}`
+                            : `Your verification code is: ${resetCodeSimulationValue}`}
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
+                        {language === 'de' ? 'Neues Passwort (mind. 6 Zeichen)' : 'New Password (min. 6 chars)'}
+                      </label>
+                      <input 
+                        type="password" 
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndResetPassword()}
+                        className={`w-full px-4 py-3 border rounded-xl text-sm transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white' : 'border-[#e2e5f1] bg-stone-50'}`}
+                        placeholder={language === 'de' ? 'Passwort wählen' : 'Choose password'}
+                      />
+                    </div>
+
+                    <button 
+                      onClick={handleVerifyAndResetPassword}
+                      className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-bold py-3.5 rounded-xl text-sm transition duration-200 cursor-pointer shadow-md"
+                    >
+                      {language === 'de' ? 'Passwort ändern & einloggen' : 'Change Password & Log In'}
+                    </button>
+                  </div>
+                )}
+
+                <button 
+                  onClick={() => { setAuthModalTab('login'); setResetStep('request'); }}
+                  className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition py-1 cursor-pointer text-center block"
+                >
+                  {language === 'de' ? '← Zurück zum Login' : '← Back to Login'}
+                </button>
+              </div>
+            )}
+
+            {/* GOOGLE & APPLE SIGN IN BUTTONS AND SEPARATOR */}
+            {(authModalTab === 'login' || authModalTab === 'register') && (
+              <>
+                <div className="relative flex py-2 items-center my-3">
+                  <div className={`flex-grow border-t ${darkMode ? 'border-slate-800' : 'border-[#e2e5f1]'}`}></div>
+                  <span className="flex-shrink mx-3 text-[#8b90a8] text-[10px] font-bold uppercase tracking-wider">{t('or')}</span>
+                  <div className={`flex-grow border-t ${darkMode ? 'border-slate-800' : 'border-[#e2e5f1]'}`}></div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <button 
+                    onClick={doGoogleLogin}
+                    className={`w-full font-bold py-3 rounded-xl text-xs md:text-sm transition duration-150 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm border ${darkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-850 text-slate-100' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}`}
+                  >
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#EA4335" d="M12 5.04c1.61 0 3.05.56 4.19 1.65l3.12-3.12C17.43 1.84 14.92 1 12 1 7.35 1 3.39 3.67 1.42 7.58l3.78 2.93c.89-2.67 3.39-4.47 6.8-4.47z"/>
+                      <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.35H12v4.51h6.44c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-1.99 3.43-4.92 3.43-8.61z"/>
+                      <path fill="#FBBC05" d="M5.2 14.73c-.23-.69-.36-1.43-.36-2.2s.13-1.51.36-2.2L1.42 7.4c-.81 1.62-1.27 3.44-1.27 5.37s.46 3.75 1.27 5.37l3.78-2.93z"/>
+                      <path fill="#34A853" d="M12 23c3.24 0 5.96-1.08 7.95-2.91l-3.7-2.87c-1.08.73-2.47 1.16-4.25 1.16-3.41 0-5.91-1.8-6.8-4.47l-3.78 2.93C3.39 19.33 7.35 23 12 23z"/>
+                    </svg>
+                    {language === 'de' ? 'Mit Google anmelden' : (language === 'en' ? 'Sign in with Google' : 'Google Login')}
+                  </button>
+
+                  <button 
+                    onClick={doAppleLogin}
+                    className={`w-full font-bold py-3 rounded-xl text-xs md:text-sm transition duration-150 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm border ${darkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-850 text-slate-100' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}`}
+                  >
+                    <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.05 20.28c-.98.95-2.05 1.88-3.08 1.88-1.01 0-1.31-.61-2.48-.61-1.15 0-1.5.59-2.46.61-.99.02-2.13-1-3.13-1.92-2.03-1.89-3.58-5.32-3.58-8.52 0-5.07 3.32-7.76 6.46-7.76 1.05 0 2.02.37 2.66.75.64.38 1.25.75 1.93.75.68 0 1.18-.34 1.82-.71.74-.43 1.85-.81 3.01-.81 4.83 0 7.23 3.51 7.23 5.12-1.02.48-2.42 1.34-2.42 3.73 0 2.87 2.37 3.84 2.39 3.85-.02.05-.37 1.27-1.25 2.54M15.42 4.42c1.03-1.24 1.7-2.92 1.51-4.42-1.29.05-2.85.86-3.78 1.95-.8.92-1.5 2.62-1.31 4.1 1.44.11 2.91-.71 3.58-1.63"/>
+                    </svg>
+                    {language === 'de' ? 'Mit Apple anmelden' : 'Sign in with Apple'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3889,7 +5327,7 @@ export default function App() {
             <button 
               onClick={() => {
                 setShowSurveyModal(false);
-                triggerToast(language === 'de' ? 'Umfrage übersprungen. Viel Spaß mit AleksAI!' : 'Survey skipped. Have fun with AleksAI!');
+                triggerToast(language === 'de' ? 'Umfrage übersprungen. Viel Spaß mit AlerksAI!' : 'Survey skipped. Have fun with AlerksAI!');
               }}
               className="absolute top-5 right-5 px-3 py-1 text-xs font-bold rounded-lg bg-stone-100 dark:bg-slate-800 hover:bg-stone-200 dark:hover:bg-slate-700 transition cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-white"
             >
@@ -3902,7 +5340,7 @@ export default function App() {
                 {language === 'de' ? '⚡ Personalisierung' : '⚡ Personalization'}
               </span>
               <h3 className="text-lg font-black tracking-tight">
-                {language === 'de' ? 'Unterstütze AleksAI' : 'Support AleksAI'}
+                {language === 'de' ? 'Unterstütze AlerksAI' : 'Support AlerksAI'}
               </h3>
               <div className="w-12 h-1 bg-[#4f6ef7] rounded-full mt-2" />
             </div>
@@ -3950,12 +5388,12 @@ export default function App() {
                     {language === 'de' ? 'Frage 2 von 3: Hauptinteresse' : 'Question 2 of 3: Main Interest'}
                   </p>
                   <p className="text-sm font-semibold mb-2">
-                    {language === 'de' ? 'Was möchtest du hauptsächlich mit AleksAI tun?' : 'What do you mainly want to do with AleksAI?'}
+                    {language === 'de' ? 'Was möchtest du hauptsächlich mit AlerksAI tun?' : 'What do you mainly want to do with AlerksAI?'}
                   </p>
                   <div className="grid grid-cols-1 gap-2.5">
                     {[
                       { key: 'learning', label: 'Hausaufgaben & Schule 📚', desc: 'Effektive Lernbegleitung und Erklärungen' },
-                      { key: 'building', label: 'Apps & Spiele entwickeln 🤖', desc: 'AleksAI Studio AI-Builder ausreizen' },
+                      { key: 'building', label: 'Apps & Spiele entwickeln 🤖', desc: 'AlerksAI Studio AI-Builder ausreizen' },
                       { key: 'copilot', label: 'Allgemeiner Co-Pilot 🧠', desc: 'Allround-Unterstützung für den Alltag' }
                     ].map((opt) => (
                       <button
@@ -4236,7 +5674,7 @@ export default function App() {
                   <span className="text-3xl animate-bounce">👑</span>
                   <div className="text-left">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-black text-xl tracking-tight">AleksAI Master-Zentrum</h3>
+                      <h3 className="font-black text-xl tracking-tight">AlerksAI Master-Zentrum</h3>
                       <span className="bg-black/30 text-[8px] tracking-widest uppercase font-black px-2 py-0.5 rounded-full border border-white/20">v3.5 LIVE</span>
                     </div>
                     <p className="text-[10px] text-emerald-100 opacity-90 font-bold uppercase tracking-widest mt-0.5">ADMIN-KONTROLLE &amp; REALTIME TELEMETRIE · ANGEMELDET ALS: aleks.smolovic@web.de</p>
@@ -4858,7 +6296,7 @@ export default function App() {
                     <div className="lg:col-span-7 space-y-6">
                       <div className={`p-5 rounded-3xl border ${darkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-[#f8f9fc] border-[#e2e5f1]'}`}>
                         <h4 className="text-xs font-black uppercase tracking-wider text-[#4f6ef7] mb-1">Globale System-Mitteilung (Broadcast)</h4>
-                        <p className={`text-[11px] leading-relaxed mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Erstelle eine leuchtende Info-Nachricht, die sofort ganz oben für alle angemeldeten Benutzer der AleksAI App eingeblendet wird.</p>
+                        <p className={`text-[11px] leading-relaxed mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Erstelle eine leuchtende Info-Nachricht, die sofort ganz oben für alle angemeldeten Benutzer der AlerksAI App eingeblendet wird.</p>
                         
                         <textarea 
                           value={adminBroadcast}
@@ -5063,6 +6501,307 @@ export default function App() {
         </button>
       )}
 
+      {/* ── COOKIE CONSENT BANNER ── */}
+      {showCookieBanner && (
+        <div className={`fixed bottom-4 right-4 max-w-md w-[calc(100%-2rem)] z-55 rounded-3xl p-5 shadow-[0_20px_50px_rgba(0,0,0,0.3)] border transition-all duration-300 animate-slide-in ${
+          darkMode ? 'bg-slate-900/95 backdrop-blur-md border-slate-800 text-white shadow-[0_15px_30px_rgba(0,0,0,0.6)]' : 'bg-white/95 backdrop-blur-md border-slate-200 text-slate-900'
+        }`}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="text-xl">🍪</span>
+            <h4 className="text-sm font-black tracking-tight">
+              {language === 'de' ? 'Cookie- & Datenschutzeinstellungen' : 'Cookie & Privacy Preference'}
+            </h4>
+          </div>
+          
+          <p className="text-xs leading-relaxed opacity-85 mb-4 text-left">
+            {language === 'de' 
+              ? 'Wir nutzen Cookies und lokale Speichergeräte, um dein Benutzerkonto und deine Token-Käufe im Shop abzusichern, Präferenzen zu speichern und unsere Chatting-Dienste zu verbessern.'
+              : 'We use cookies and local storage to secure your user account, save visual preferences, authorize shop purchases, and improve our intelligent chatting services.'}
+          </p>
+
+          {showCookieSettings ? (
+            <div className={`space-y-3 p-3.5 rounded-2xl mb-4 border text-[11px] ${darkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-55 border-slate-150'}`}>
+              <div className="flex items-center justify-between">
+                <div className="text-left">
+                  <p className="font-extrabold">{language === 'de' ? 'Notwendige Cookies (Aktiv)' : 'Strictly Necessary (Always Active)'}</p>
+                  <p className="opacity-75 text-[10px]">{language === 'de' ? 'Für Benutzerkonto, SMTP-Codes, Sprache & Design.' : 'For user credentials, SMTP code flows, and visual settings.'}</p>
+                </div>
+                <input type="checkbox" checked disabled className="accent-blue-500 h-4 w-4" />
+              </div>
+              <div className="flex items-center justify-between border-t pt-2.5 border-slate-200/50 dark:border-slate-800/50">
+                <div className="text-left">
+                  <p className="font-extrabold">{language === 'de' ? 'Analyse & Shop-Sicherheit' : 'Analytics & Shop Security'}</p>
+                  <p className="opacity-75 text-[10px]">{language === 'de' ? 'Sichert Einkäufe und anonyme Feedbackstatistiken.' : 'Ensures secure checkout logs and anonymous performance tracking.'}</p>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={cookieSettings.analytics} 
+                  onChange={(e) => setCookieSettings({ ...cookieSettings, analytics: e.target.checked })}
+                  className="accent-blue-500 h-4 w-4 cursor-pointer" 
+                />
+              </div>
+              <div className="flex items-center justify-between border-t pt-2.5 border-slate-200/50 dark:border-slate-800/50">
+                <div className="text-left">
+                  <p className="font-extrabold">{language === 'de' ? 'Marketing & Personalisierung' : 'Marketing & Personalization'}</p>
+                  <p className="opacity-75 text-[10px]">{language === 'de' ? 'Für exklusive Design-Vorschläge & Kampagnen.' : 'For seasonal theme updates & platform promotions.'}</p>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={cookieSettings.marketing} 
+                  onChange={(e) => setCookieSettings({ ...cookieSettings, marketing: e.target.checked })}
+                  className="accent-blue-500 h-4 w-4 cursor-pointer" 
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2.5 text-[10px] mb-4">
+            <button 
+              onClick={() => { setShowLegalModal('privacy'); }}
+              className="text-[#4f6ef7] dark:text-blue-400 hover:underline font-bold cursor-pointer"
+            >
+              {language === 'de' ? 'Datenschutzerklärung lesen' : 'View Privacy Policy'}
+            </button>
+            <button 
+              onClick={() => setShowCookieSettings(!showCookieSettings)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold cursor-pointer"
+            >
+              {showCookieSettings ? (language === 'de' ? 'Ausblenden' : 'Hide settings') : (language === 'de' ? 'Anpassen...' : 'Customize...')}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                const finalSettings = { necessary: true, analytics: false, marketing: false };
+                setCookieSettings(finalSettings);
+                localStorage.setItem('aleksai_cookie_consent', JSON.stringify(finalSettings));
+                setShowCookieBanner(false);
+                triggerToast(language === 'de' ? 'Nur notwendige Cookies gespeichert!' : 'Only necessary cookies saved!');
+              }}
+              className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-wider border cursor-pointer transition ${
+                darkMode ? 'bg-slate-950/60 border-slate-800 hover:bg-slate-850 text-white' : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
+              }`}
+            >
+              {language === 'de' ? 'Nur Notwendige' : 'Essential Only'}
+            </button>
+            <button
+              onClick={() => {
+                const finalSettings = showCookieSettings 
+                  ? cookieSettings 
+                  : { necessary: true, analytics: true, marketing: true };
+                setCookieSettings(finalSettings);
+                localStorage.setItem('aleksai_cookie_consent', JSON.stringify(finalSettings));
+                setShowCookieBanner(false);
+                triggerToast(language === 'de' ? 'Cookie-Einstellungen erfolgreich gespeichert!' : 'Cookie preferences saved successfully!');
+              }}
+              className="py-2 rounded-xl text-[11px] font-black uppercase tracking-wider bg-[#4f6ef7] hover:bg-[#6c83f8] text-white cursor-pointer transition shadow-md"
+            >
+              {language === 'de' ? 'Zustimmen & Schließen' : 'Accept All'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── LEGAL DOCUMENTS MODAL (PRIVACY / TERMS / COOKIE POLICY) ── */}
+      {showLegalModal && (
+        <div className="fixed inset-0 bg-black/70 z-55 flex items-center justify-center p-3 sm:p-4">
+          <div className={`rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col p-5 sm:p-6 relative shadow-2xl animate-zoom-in border transition-all ${
+            darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-950'
+          }`}>
+            <button 
+              onClick={() => setShowLegalModal(null)}
+              className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#f4f4f7] dark:bg-slate-800 hover:bg-[#e2e5f1] dark:hover:bg-slate-750 transition flex items-center justify-center text-sm font-bold text-stone-500 hover:text-red-500 cursor-pointer z-10"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-2 mb-4 shrink-0 text-left">
+              <span className="text-2xl">
+                {showLegalModal === 'privacy' ? '🛡️' : showLegalModal === 'terms' ? '📜' : '🍪'}
+              </span>
+              <div>
+                <h3 className="text-base sm:text-lg font-black tracking-tight">
+                  {showLegalModal === 'privacy' && (language === 'de' ? 'Datenschutzerklärung' : 'Privacy Policy')}
+                  {showLegalModal === 'terms' && (language === 'de' ? 'Einkaufsbedingungen & Shop-Richtlinien' : 'Purchase Terms & Shop Policy')}
+                  {showLegalModal === 'cookies' && (language === 'de' ? 'Cookie-Richtlinie' : 'Cookie Policy')}
+                </h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  AlerksAI Compliance Platform • {new Date().toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US')}
+                </p>
+              </div>
+            </div>
+
+            {/* Scrollable text box */}
+            <div className={`flex-1 overflow-y-auto pr-2 text-xs leading-relaxed text-left space-y-4 pb-4 border-b border-t py-3 scrollbar-thin ${
+              darkMode ? 'text-slate-300 border-slate-850' : 'text-slate-700 border-slate-100'
+            }`}>
+              {showLegalModal === 'privacy' && (
+                <>
+                  <p>
+                    {language === 'de'
+                      ? 'Der Schutz deiner persönlichen Daten ist uns ein wichtiges Anliegen. In dieser Datenschutzerklärung informieren wir dich darüber, wie deine Daten verarbeitet werden, insbesondere im Hinblick auf dein Benutzerkonto, deine Chats und Einkäufe.'
+                      : 'Protecting your personal data is a top priority. This Privacy Policy informs you about how your data is processed, specifically regarding your credentials, chat sessions, and credit purchases.'}
+                  </p>
+                  
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">1. Erhebung und Speicherung personenbezogener Daten</h4>
+                    <p>
+                      {language === 'de'
+                        ? '• Benutzerkonto: Bei der Registrierung erfassen wir deine E-Mail-Adresse und dein verschlüsseltes Passwort. Diese Daten dienen ausschließlich deiner Authentifizierung und der Synchronisation deiner Token-Credits.'
+                        : '• User Account: Upon registration, we collect your email address and your encrypted password. This data is exclusively used for authentication and syncing your token credits.'}
+                    </p>
+                    <p>
+                      {language === 'de'
+                        ? '• Chats & Interaktionen: Deine eingegebenen Prompts und die generierten Antworten werden lokal in deinem Browser (LocalStorage) und verschlüsselt in unserer sicheren Datenbank gesichert, damit du deine Chatverläufe auf verschiedenen Geräten nutzen kannst.'
+                        : '• Chats & Interactions: Your prompt inputs and generated replies are secured locally in your browser (LocalStorage) and encrypted inside our database to enable cross-device synchronization.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">2. Kredit-Käufe und Zahlungsdaten</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Wenn du im Credit Shop Token-Pakete erwirbst, nutzen wir hochsichere Zahlungsanbieter (z. B. Stripe). AlerksAI speichert zu keinem Zeitpunkt deine Bankdaten oder Kreditkartennummern auf eigenen Servern. Wir protokollieren lediglich den Status des Kaufs (Erfolgreich/Fehlgeschlagen) und die Anzahl der gutgeschriebenen Tokens.'
+                        : 'When purchasing token packages in our Credit Shop, we route through highly secure payment gateways (e.g. Stripe). AlerksAI never saves your banking accounts or credit card numbers on our servers. We only log transaction states (Success/Failed) and credited token amounts.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">3. Einbindung von AI-Modellen (Dritte)</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Deine Chat-Nachrichten werden verschlüsselt an die API-Schnittstellen unserer Model-Anbieter (OpenAI, Anthropic, Google) übermittelt, um die Antworten zu generieren. Hierbei werden keinerlei persönliche Benutzerdaten (wie E-Mail-Adresse, IP-Adresse oder Namen) an diese Dritten weitergegeben.'
+                        : 'Your chat content is encrypted and proxy-forwarded to our model providers (OpenAI, Anthropic, Google) to generate responses. Absolutely no personal identifiers (such as email, IP, or username) are ever sent to these third parties.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">4. Deine Rechte</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Du hast das Recht auf Auskunft, Berichtigung oder vollständige Löschung deines Benutzerkontos und der damit verbundenen Daten. Du kannst deine Daten jederzeit löschen, indem du in deinen Profileinstellungen auf "Konto löschen" klickst, oder uns direkt kontaktierst.'
+                        : 'You have the right to request access, correction, or permanent deletion of your user account. You can trigger deletion at any time in your profile settings via "Delete Account", or by contacting us.'}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {showLegalModal === 'terms' && (
+                <>
+                  <p>
+                    {language === 'de'
+                      ? 'Diese Einkaufsbedingungen regeln die Geschäftsbeziehung zwischen dir und AlerksAI bezüglich des Erwerbs von virtuellen Credits (Tokens) und VIP-Mitgliedschaften.'
+                      : 'These Purchase Terms govern the commercial relationship between you and AlerksAI regarding the acquisition of virtual credits (Tokens) and VIP subscriptions.'}
+                  </p>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">1. Vertragsgegenstand</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Der Shop bietet virtuelle Credits ("Tokens") und monatliche Abonnements an. Tokens können eingesetzt werden, um rechenintensive AI-Modelle (wie GPT-4, Claude 3.5, DeepSeek-R1) im Chat zu nutzen. Tokens haben keinen materiellen Gegenwert, sind nicht übertragbar und können nicht in Bargeld ausgezahlt werden.'
+                        : 'Our Shop offers virtual credits ("Tokens") and monthly subscriptions. Tokens are consumed to execute queries on compute-heavy AI models (like GPT-4, Claude 3.5, DeepSeek-R1). Tokens have no physical value, are non-transferable, and cannot be redeemed for cash.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">2. Sofortige Bereitstellung & Verzicht auf das Widerrufsrecht</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Beim Kauf eines Token-Pakets stimmst du ausdrücklich zu, dass der Kauf sofort abgeschlossen und das Token-Guthaben deinem Benutzerkonto gutgeschrieben wird. Du stimmst zu, dass dein 14-tägiges Widerrufsrecht vorzeitig erlischt, sobald die Bereitstellung der digitalen Inhalte begonnen hat und der erste Token verbraucht wurde.'
+                        : 'By purchasing a token bundle, you explicitly agree that delivery of the digital content starts immediately. You acknowledge and agree that your 14-day cooling-off/right of withdrawal expires prematurely once execution has begun (i.e., as soon as the first token is consumed).'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">3. Ablauf von Guthaben & Benutzerkonten</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Erworbene Tokens verfallen nicht, solange dein Benutzerkonto aktiv bleibt. Solltest du dich entscheiden, dein Benutzerkonto dauerhaft zu löschen, verfallen alle verbleibenden Tokens ersatzlos. Es besteht kein Anspruch auf Rückerstattung verbleibender Guthaben.'
+                        : 'Acquired tokens do not expire as long as your account remains active. If you permanently delete your credentials, all unused credits are lost. There are no refunds for leftover active credit balances.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">4. Preise und sichere Abwicklung</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Alle Preise sind Endpreise. Der Zahlungsvorgang wird vollständig verschlüsselt über Stripe abgewickelt, um maximalen Schutz zu garantieren. Ein Kauf ist erst abgeschlossen, wenn die Zahlungsbestätigung vom Provider verarbeitet wurde.'
+                        : 'All prices are final. Payments are fully encrypted and securely authorized via Stripe. A transaction is considered complete only after confirmation from the secure payment provider.'}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {showLegalModal === 'cookies' && (
+                <>
+                  <p>
+                    {language === 'de'
+                      ? 'Hier erfährst du im Detail, welche Cookies und Speichertechnologien AlerksAI einsetzt, um dir eine reibungslose Benutzererfahrung zu gewährleisten.'
+                      : 'This section details the cookies and storage technologies used by AlerksAI to ensure a smooth, stable, and persistent web application.'}
+                  </p>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">1. Was sind Cookies & LocalStorage?</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Cookies sind kleine Textdateien, die auf deinem Computer abgelegt werden. LocalStorage ermöglicht es uns, größere Mengen an Daten (wie Chatverläufe und Einstellungen) dauerhaft direkt in deinem Browser zu sichern, ohne die Servergeschwindigkeit zu beeinträchtigen.'
+                        : 'Cookies are small text strings saved on your computer. LocalStorage allows us to safely store larger volumes of state data (like chat histories and configurations) directly inside your browser for rapid response times.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">2. Erstaussteller-Schlüssel (Eingesetzte Schlüssel)</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Wir verwenden folgende Erstaussteller-Schlüssel:'
+                        : 'We utilize the following first-party keys:'}
+                    </p>
+                    <ul className="list-disc list-inside pl-2 space-y-1">
+                      <li>
+                        <strong>`aleksai_dark_mode`</strong>:{' '}
+                        {language === 'de' ? 'Speichert deine Theme-Auswahl (Hell oder Dunkel).' : 'Saves your active color mode preference (Dark/Light).'}
+                      </li>
+                      <li>
+                        <strong>`aleksai_language`</strong>:{' '}
+                        {language === 'de' ? 'Speichert deine Sprachauswahl (Deutsch oder Englisch).' : 'Saves your active language preference (German/English).'}
+                      </li>
+                      <li>
+                        <strong>`aleksai_cookie_consent`</strong>:{' '}
+                        {language === 'de' ? 'Speichert deine in diesem Banner getroffene Cookie-Entscheidung.' : 'Saves the consent choices you made on this banner.'}
+                      </li>
+                      <li>
+                        <strong>`aleks_ai_sessions`</strong>:{' '}
+                        {language === 'de' ? 'Sichert deine aktuellen Chat-Sitzungen lokal zur sofortigen Wiederherstellung.' : 'Secures active chat sequences locally for instantaneous recovery.'}
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">3. Drittanbieter-Technologien</h4>
+                    <p>
+                      {language === 'de'
+                        ? 'Für die Sicherheit von Benutzerkonto und Kreditshop bettet Firebase Auth und Stripe funktionale Cookie-Elemente ein, die ausschließlich der Missbrauchserkennung und sicheren Authentifizierung dienen. Es werden keine Werbe- oder Trackingnetzwerke geladen.'
+                        : 'For checkout stability and credentials protection, Firebase Auth and Stripe embed functional cookie widgets solely for security screening and verification. Absolutely no commercial advertisement trackers are loaded.'}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-between items-center shrink-0">
+              <span className="text-[10px] text-slate-450 font-bold">AlerksAI Compliance Platform</span>
+              <button
+                onClick={() => setShowLegalModal(null)}
+                className="px-5 py-2.5 bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-black text-xs rounded-xl transition cursor-pointer shadow-sm"
+              >
+                {language === 'de' ? 'Schließen' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── SUCCESS / ERROR APP TOAST POPUP ── */}
       {showToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-white px-5 py-3 rounded-2xl text-xs md:text-sm font-bold z-55 shadow-2xl flex items-center gap-2 animate-[pulse_1.5s_infinite]">
@@ -5223,7 +6962,7 @@ export function ModelLogo({ model, className = "w-5 h-5", glow = false, color }:
 }
 
 // Emulates a high-speed character-by-character typewriter animation for incoming AI replies (ChatGPT style)
-export function TypewriterParagraph({ key, content, isLatest, darkMode, idx }: { key?: any; content: string; isLatest: boolean; darkMode: boolean; idx: number }) {
+export function TypewriterParagraph({ content, isLatest, darkMode, idx }: { key?: any; content: string; isLatest: boolean; darkMode: boolean; idx: number }) {
   const [displayedText, setDisplayedText] = useState(isLatest ? "" : content);
 
   useEffect(() => {

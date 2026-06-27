@@ -87,3 +87,45 @@ body {
   color: var(--text2);
   font-style: italic;
 }
+
+/* 🌈 ANIMATED GLOWING RAINBOW GRADIENT BORDERS */
+@keyframes border-rainbow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.rainbow-border-container {
+  position: relative;
+  border-radius: 16px;
+  padding: 2.5px; /* Border thickness */
+  background: linear-gradient(270deg, #ff007f, #7f00ff, #00f0ff, #00ff7f, #ff007f);
+  background-size: 400% 400%;
+  animation: border-rainbow 6s ease infinite;
+  box-shadow: 0 0 20px rgba(127, 0, 255, 0.45);
+  display: inline-block;
+  width: auto;
+}
+
+.rainbow-border-inner-user {
+  background: #0d111d; /* Elegant deep dark slate to contrast beautifully with the rainbow gradient */
+  color: #ffffff;
+  border-radius: 13.5px;
+  padding: 11px 15px;
+  width: 100%;
+}
+
+.rainbow-border-inner-light-user {
+  background: #ffffff; /* Fresh crisp white for light mode */
+  color: #0d0f1a;
+  border-radius: 13.5px;
+  padding: 11px 15px;
+  width: 100%;
+}
+
