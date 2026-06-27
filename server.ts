@@ -7,6 +7,15 @@ import nodemailer from 'nodemailer';
 
 dotenv.config();
 
+function cleanEnv(val: string | undefined): string {
+  if (!val) return '';
+  let s = val.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -30,7 +39,7 @@ function getAIClient(customApiKey?: string): GoogleGenAI {
   }
 
   // Use the system-wide GEMINI_API_KEY from env, or fall back to the global developer key if missing
-  const activeKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6LhoTtidEXJ6W_0rpS-9qi6nPLfc19dxazaQwaO-4IH_g';
+  const activeKey = cleanEnv(process.env.GEMINI_API_KEY) || 'AQ.Ab8RN6LhoTtidEXJ6W_0rpS-9qi6nPLfc19dxazaQwaO-4IH_g';
   return new GoogleGenAI({
     apiKey: activeKey,
     httpOptions: {
@@ -455,10 +464,10 @@ app.post('/api/send-email', async (req: express.Request, res: express.Response) 
     </div>
   `;
 
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = process.env.SMTP_PORT;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  const smtpHost = cleanEnv(process.env.SMTP_HOST);
+  const smtpPort = cleanEnv(process.env.SMTP_PORT);
+  const smtpUser = cleanEnv(process.env.SMTP_USER);
+  const smtpPass = cleanEnv(process.env.SMTP_PASS);
 
   const isDummy = (val: string | undefined) => {
     if (!val) return true;
@@ -486,6 +495,12 @@ app.post('/api/send-email', async (req: express.Request, res: express.Response) 
         auth: {
           user: smtpUser,
           pass: smtpPass
+        },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
+        tls: {
+          rejectUnauthorized: false
         }
       });
 
