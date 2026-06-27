@@ -1168,32 +1168,22 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, code, type: 'google' })
         });
-        const contentType = res.headers.get('content-type');
-        if (res.ok && contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data.success) {
-            setGoogleCodeMethod(data.method);
-            if (data.method === 'simulation' || data.method === 'failed_smtp') {
-              setGoogleCodeSimulationValue(data.code);
-            }
-            if (data.smtpError) {
-              setGoogleSmtpError(data.smtpError);
-            }
-            triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
-          } else {
-            setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
+        const data = await res.json();
+        if (data.success) {
+          setGoogleCodeMethod(data.method);
+          if (data.method === 'simulation' || data.method === 'failed_smtp') {
+            setGoogleCodeSimulationValue(data.code);
           }
+          if (data.smtpError) {
+            setGoogleSmtpError(data.smtpError);
+          }
+          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
         } else {
-          console.warn('Backend /api/send-email endpoint not found or returned non-JSON (possibly static hosting like Netlify). Falling back to static client-side simulation...');
-          setGoogleCodeMethod('simulation');
-          setGoogleCodeSimulationValue(code);
-          triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
         }
       } catch (e) {
-        console.warn('Failed to fetch /api/send-email (possibly static hosting like Netlify). Falling back to client-side simulation...', e);
-        setGoogleCodeMethod('simulation');
-        setGoogleCodeSimulationValue(code);
-        triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+        console.error('Error sending Google verification email:', e);
+        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
       } finally {
         setIsSendingGoogleCode(false);
       }
@@ -1270,32 +1260,22 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, code, type: 'apple' })
         });
-        const contentType = res.headers.get('content-type');
-        if (res.ok && contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data.success) {
-            setGoogleCodeMethod(data.method);
-            if (data.method === 'simulation' || data.method === 'failed_smtp') {
-              setGoogleCodeSimulationValue(data.code);
-            }
-            if (data.smtpError) {
-              setGoogleSmtpError(data.smtpError);
-            }
-            triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
-          } else {
-            setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
+        const data = await res.json();
+        if (data.success) {
+          setGoogleCodeMethod(data.method);
+          if (data.method === 'simulation' || data.method === 'failed_smtp') {
+            setGoogleCodeSimulationValue(data.code);
           }
+          if (data.smtpError) {
+            setGoogleSmtpError(data.smtpError);
+          }
+          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
         } else {
-          console.warn('Backend /api/send-email endpoint not found or returned non-JSON (possibly static hosting like Netlify). Falling back to static client-side simulation...');
-          setGoogleCodeMethod('simulation');
-          setGoogleCodeSimulationValue(code);
-          triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
         }
       } catch (e) {
-        console.warn('Failed to fetch /api/send-email (possibly static hosting like Netlify). Falling back to client-side simulation...', e);
-        setGoogleCodeMethod('simulation');
-        setGoogleCodeSimulationValue(code);
-        triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+        console.error('Error sending Apple verification email:', e);
+        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
       } finally {
         setIsSendingGoogleCode(false);
       }
@@ -1388,41 +1368,25 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: targetEmail, code, type: 'reset' })
       });
-      const contentType = res.headers.get('content-type');
-      if (res.ok && contentType && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.success) {
-          setResetCodeMethod(data.method);
-          if (data.method === 'simulation' || data.method === 'failed_smtp') {
-            setResetCodeSimulationValue(data.code);
-          }
-          if (data.smtpError) {
-            setResetSmtpError(data.smtpError);
-          }
-          setResetStep('verify');
-          setResetCodeInput('');
-          setNewPasswordInput('');
-          triggerToast(language === 'de' ? 'Bestätigungscode wurde an deine E-Mail gesendet!' : 'Verification code sent to your email!');
-        } else {
-          setAuthError(language === 'de' ? 'Fehler beim Senden des Codes.' : 'Failed to send verification code.');
+      const data = await res.json();
+      if (data.success) {
+        setResetCodeMethod(data.method);
+        if (data.method === 'simulation' || data.method === 'failed_smtp') {
+          setResetCodeSimulationValue(data.code);
         }
-      } else {
-        console.warn('Backend /api/send-email endpoint not found or returned non-JSON (possibly static hosting like Netlify). Falling back to static client-side simulation...');
-        setResetCodeMethod('simulation');
-        setResetCodeSimulationValue(code);
+        if (data.smtpError) {
+          setResetSmtpError(data.smtpError);
+        }
         setResetStep('verify');
         setResetCodeInput('');
         setNewPasswordInput('');
-        triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+        triggerToast(language === 'de' ? 'Bestätigungscode wurde an deine E-Mail gesendet!' : 'Verification code sent to your email!');
+      } else {
+        setAuthError(language === 'de' ? 'Fehler beim Senden des Codes.' : 'Failed to send verification code.');
       }
     } catch (err) {
-      console.warn('Failed to reach backend /api/send-email (possibly static hosting like Netlify). Falling back to client-side simulation...', err);
-      setResetCodeMethod('simulation');
-      setResetCodeSimulationValue(code);
-      setResetStep('verify');
-      setResetCodeInput('');
-      setNewPasswordInput('');
-      triggerToast(language === 'de' ? 'Statischer Modus: Code im Fenster angezeigt!' : 'Static mode: Code displayed in verification window!');
+      console.error(err);
+      setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
     } finally {
       setIsSendingResetCode(false);
     }
