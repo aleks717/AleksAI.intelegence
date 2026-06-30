@@ -1,5 +1,5 @@
 {
-  "name": "AlerksAI Intelegence",
+  "name": "AleksAI Intelegence",
   "description": "Ein intelligenter Chat-Assistent mit verschiedenen KI-Modellen wie Gemini, Llama 4 Scout, OpenAI, Deepseek und Claude.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -246,7 +246,7 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     }
 
     // Setup system instructions matching the selected models' personalities
-    let systemInstruction = 'Du bist AlerksAI Intelegence, ein smarter Chat-Assistent powered by Gemini Intelligence. Du antwortest standardmäßig immer auf Deutsch.';
+    let systemInstruction = 'Du bist AleksAI Intelegence, ein smarter Chat-Assistent powered by Gemini Intelligence. Du antwortest standardmäßig immer auf Deutsch.';
     
     // Normalize model string to map legacy or missing keys gracefully
     let normalizedModel = model;
@@ -255,27 +255,27 @@ app.post('/api/chat', async (req: express.Request, res: express.Response) => {
     }
 
     if (studyMode) {
-      systemInstruction = `Du bist AlerksAI Intelegence im 🎓 Schulmodus (Study Mode), angetrieben von Gemini Intelligence. Deine absolute Kernaufgabe ist es, dem Benutzer beim Lernen, bei Schulaufgaben, Hausaufgaben und akademischen Fragen (Mathematik, Naturwissenschaften, Geschichte, Geografie, Sprachen etc.) kompetent zu helfen.
+      systemInstruction = `Du bist AleksAI Intelegence im 🎓 Schulmodus (Study Mode), angetrieben von Gemini Intelligence. Deine absolute Kernaufgabe ist es, dem Benutzer beim Lernen, bei Schulaufgaben, Hausaufgaben und akademischen Fragen (Mathematik, Naturwissenschaften, Geschichte, Geografie, Sprachen etc.) kompetent zu helfen.
 - Erkläre komplexe Themen extrem klar, geduldig, verständlich, altersgerecht und Schritt für Schritt.
 - Biete regelmäßig an, Übungsbeispiele oder Fragen zu stellen, um das Gelernte zu festigen.
 - Behalte einen absolut motivierenden, positiven Ton bei.
 - WICHTIG: Falls der Benutzer versucht, dich für nicht-schulische Themen zu verwenden (z.B. Gaming-Codes, Promi-Klatsch, YouTube-Videos, Witze oder reines Plaudern), weise ihn höflich, aber bestimmt darauf hin, dass du dich im Schulmodus befindest und lenke das Thema direkt wieder auf seine Bildung oder Hausaufgaben zurück (z.B.: "Ich befinde mich gerade im Schulmodus, um dir beim Lernen zu helfen! Lass uns lieber wieder auf deine Schulaufgaben oder Lernziele konzentrieren. Welches Schulfach machen wir als nächstes?").
 Du antwortest standardmäßig immer auf Deutsch.`;
     } else if (normalizedModel === 'nano-banana') {
-      systemInstruction = 'Du bist AlerksAI Intelegence Nano (Gemini 3.1 Flash-Lite, von Google). Du bist eine extrem leichtgewichtige, witzige und schnelle Version von AlerksAI Intelegence. Du gibst super clevere, knackige Antworten und liebst Bananen-Metaphern! Antworte immer auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence Nano (Gemini 3.1 Flash-Lite, von Google). Du bist eine extrem leichtgewichtige, witzige und schnelle Version von AleksAI Intelegence. Du givst super clevere, knackige Antworten und liebst Bananen-Metaphern! Antworte immer auf Deutsch.';
     } else if (normalizedModel === 'llama-4-scout') {
-      systemInstruction = 'Du bist AlerksAI Intelegence neo (Llama 4 von Meta). Du antwortest extrem pragmatisch, kompakt, direkt und fokussiert auf Effizienz und Schnelligkeit. Du bist stolz auf deine Open-Source-Wurzeln. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence neo (Llama 4 von Meta). Du antwortest extrem pragmatisch, kompakt, direkt und fokussiert auf Effizienz und Schnelligkeit. Du bist stolz auf deine Open-Source-Wurzeln. Antworte auf Deutsch.';
     } else if (normalizedModel === 'openai-gpt-4o') {
-      systemInstruction = 'Du bist AlerksAI Intelegence Pro (GPT-4o-mini von OpenAI). Du präsentierst deine Antworten fantastisch sortiert, klar structured, mit Aufzählungspunkten und sehr übersichtlich. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence Pro (GPT-4o-mini von OpenAI). Du präsentierst deine Antworten fantastisch sortiert, klar structured, mit Aufzählungspunkten und sehr übersichtlich. Antworte auf Deutsch.';
     } else if (normalizedModel === 'deepseek-r1') {
-      systemInstruction = 'Du bist AlerksAI Intelegence StandArt (DeepSeek R1), ein fortschrittliches Denk-Modell. WICHTIG: Du musst zu Beginn jeder Antwort deinen detaillierten Denkprozess in einem `<think>` und `</think>` Block aufschreiben (z.B. `<think>Hier schreibst du deine tiefe Logik, Abwägungen und Lösungsüberlegungen auf...</think>`). Präsentiere danach deine finale Antwort. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence StandArt (DeepSeek R1), ein fortschrittliches Denk-Modell. WICHTIG: Du musst zu Beginn jeder Antwort deinen detaillierten Denkprozess in einem `<think>` und `</think>` Block aufschreiben (z.B. `<think>Hier schreibst du deine tiefe Logik, Abwägungen und Lösungsüberlegungen auf...</think>`). Präsentiere danach deine finale Antwort. Antworte auf Deutsch.';
     } else if (normalizedModel === 'claude-3-5') {
-      systemInstruction = 'Du bist AlerksAI Intelegence buissnis (Claude 3.5 Sonnet von Anthropic). Du schreibst mit exzellenter deutscher Sprache, sehr eloquent, nuanciert, präzise und nimmst dir Zeit für elegante Details. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence buissnis (Claude 3.5 Sonnet von Anthropic). Du schreibst mit exzellenter deutscher Sprache, sehr eloquent, nuanciert, präzise und nimmst dir Zeit für elegante Details. Antworte auf Deutsch.';
     } else if (normalizedModel === 'llama-3-ultra') {
-      systemInstruction = 'Du bist AlerksAI Intelegence Max (Llama 3.3 von Meta). Du bist Metas hochentwickeltes Allround-Modell für tiefgehende Analysen, kreative Ausarbeitungen, präzises Formulieren und anspruchsvolle Diskussionen. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence Max (Llama 3.3 von Meta). Du bist Metas hochentwickeltes Allround-Modell für tiefgehende Analysen, kreative Ausarbeitungen, präzises Formulieren und anspruchsvolle Diskussionen. Antworte auf Deutsch.';
     } else {
       // Default / Gemini
-      systemInstruction = 'Du bist AlerksAI Intelegence (Gemini Intelligence, entwickelt von Google). Du bist AlerksAI Intelegences intelligentes Standard-Modell mit herausragenden Fähigkeiten. Du bist freundlich, kreativ, sehr sachkundig und hilfst bei jeder Art von Problemstellung. Antworte auf Deutsch.';
+      systemInstruction = 'Du bist AleksAI Intelegence (Gemini Intelligence, entwickelt von Google). Du bist AleksAI Intelegences intelligentes Standard-Modell mit herausragenden Fähigkeiten. Du bist freundlich, kreativ, sehr sachkundig und hilfst bei jeder Art von Problemstellung. Antworte auf Deutsch.';
     }
 
     // Append dynamic date and year context so the AI is aware that it is currently 2026
@@ -413,7 +413,7 @@ Du antwortest standardmäßig immer auf Deutsch.`;
     let friendlyMessage = 'Verbindungsproblem mit dem KI-Dienst. Bitte versuche es gleich noch einmal.';
     
     if (errStr.includes('503') || errStr.includes('UNAVAILABLE') || errStr.includes('high demand') || errStr.includes('temporary')) {
-      friendlyMessage = 'Der AlerksAI Intelegence-Dienst ist gerade wegen hoher Auslastung überlastet. Bitte warte einen Augenblick und versuche es erneut (oder wechsle zu einem anderen Modell).';
+      friendlyMessage = 'Der AleksAI Intelegence-Dienst ist gerade wegen hoher Auslastung überlastet. Bitte warte einen Augenblick und versuche es erneut (oder wechsle zu einem anderen Modell).';
     } else if (errStr.includes('429') || errStr.includes('QUOTA') || errStr.includes('quota') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('limit')) {
       friendlyMessage = 'Das globale Kontingent (Quota Limit) der Gemini API ist für diese Stunde erschöpft. Um sofort ohne Einschränkung fortzufahren, kannst du deinen eigenen kostenlosen API-Schlüssel einfügen.';
     }
@@ -433,13 +433,13 @@ app.post('/api/send-email', async (req: express.Request, res: express.Response) 
   }
 
   const subject = type === 'reset' 
-    ? 'AlerksAI Passwort zurücksetzen - Bestätigungscode' 
-    : 'AlerksAI Google Login - Bestätigungscode';
+    ? 'AleksAI Passwort zurücksetzen - Bestätigungscode' 
+    : 'AleksAI Google Login - Bestätigungscode';
 
   const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 500px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <h2 style="color: #4f6ef7; margin: 0; font-weight: 800; font-size: 24px; letter-spacing: -0.5px;">AlerksAI Intelegence</h2>
+        <h2 style="color: #4f6ef7; margin: 0; font-weight: 800; font-size: 24px; letter-spacing: -0.5px;">AleksAI Intelegence</h2>
         <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Sicherheits-Verifizierung</p>
       </div>
       <div style="border-top: 1px solid #f1f5f9; padding-top: 20px;">

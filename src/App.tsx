@@ -140,7 +140,7 @@ export default function App() {
   const [includeClaude, setIncludeClaude] = useState<boolean>(true);
   const [includeGemini, setIncludeGemini] = useState<boolean>(true);
   const [includeImageGen, setIncludeImageGen] = useState<boolean>(true);
-  const [rModel, setRModel] = useState<string>('AlerksAI Intelegence');
+  const [rModel, setRModel] = useState<string>('AleksAI Intelegence');
 
   // Translation helper function
   const t = (key: keyof typeof LANGUAGES['de']) => {
@@ -570,7 +570,7 @@ export default function App() {
   });
   const [adminSearch, setAdminSearch] = useState('');
   const [adminLogs, setAdminLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString()}] AlerksAI Admin Interface initialisiert.`,
+    `[${new Date().toLocaleTimeString()}] AleksAI Admin Interface initialisiert.`,
     `[${new Date().toLocaleTimeString()}] Systemstatus: Bereit.`,
     `[${new Date().toLocaleTimeString()}] Firebase Auth verbunden (aleks.smolovic@web.de)`
   ]);
@@ -1153,40 +1153,26 @@ export default function App() {
         email: email
       };
 
-      // Generate verification code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setPendingGoogleLogin({ user: u, code, email });
-      setGoogleVerificationCodeInput('');
-      setAuthError('');
-      setGoogleSmtpError(null);
-      setAuthModalTab('verify_google');
-      setIsSendingGoogleCode(true);
-
-      try {
-        const res = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code, type: 'google' })
-        });
-        const data = await res.json();
-        if (data.success) {
-          setGoogleCodeMethod(data.method);
-          if (data.method === 'simulation' || data.method === 'failed_smtp') {
-            setGoogleCodeSimulationValue(data.code);
-          }
-          if (data.smtpError) {
-            setGoogleSmtpError(data.smtpError);
-          }
-          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
-        } else {
-          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
-        }
-      } catch (e) {
-        console.error('Error sending Google verification email:', e);
-        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
-      } finally {
-        setIsSendingGoogleCode(false);
+      const savedList2 = localStorage.getItem('aleksai_users');
+      let users2: any[] = [];
+      if (savedList2) {
+        try {
+          users2 = JSON.parse(savedList2) as any[];
+        } catch (e) {}
       }
+      const existingIdx = users2.findIndex((it: any) => it.firebaseUid === u.firebaseUid || (u.email && it.username.toLowerCase() === u.email.toLowerCase()));
+      if (existingIdx === -1) {
+        users2.push(u);
+      } else {
+        users2[existingIdx] = { ...users2[existingIdx], firebaseUid: u.firebaseUid, email: u.email };
+      }
+      localStorage.setItem('aleksai_users', JSON.stringify(users2));
+
+      updateAndSaveUser(u);
+      checkDailyCredits(u);
+      setShowAuthModal(false);
+      showPage('chat');
+      triggerToast(language === 'de' ? `Erfolgreich angemeldet! Willkommen zurück, ${u.firstName}!` : `Successfully logged in! Welcome back, ${u.firstName}!`);
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/popup-closed-by-user') {
@@ -1202,97 +1188,8 @@ export default function App() {
     }
   };
 
-  // Apple Single Sign-On Authenticator with Email Verification Code
-  const doAppleLogin = async () => {
-    setAuthError('');
-    setSocialProviderName('apple');
-    try {
-      const userCredential = await signInWithPopup(auth, appleProvider);
-      const fbUser = userCredential.user;
-      
-      const displayName = fbUser.displayName || 'Apple-Nutzer';
-      const nameParts = displayName.split(' ');
-      const firstName = nameParts[0] || 'Apple';
-      const lastName = nameParts.slice(1).join(' ') || 'Nutzer';
-      const email = fbUser.email || '';
+  // Apple Single Sign-On is removed as requested by the user
 
-      if (!email) {
-        setAuthError(language === 'de' ? 'Apple-Konto hat keine gültige E-Mail-Adresse.' : 'Apple account does not have a valid email address.');
-        return;
-      }
-
-      const savedList = localStorage.getItem('aleksai_users');
-      let localUser = null;
-      if (savedList) {
-        try {
-          const users = JSON.parse(savedList) as any[];
-          localUser = users.find(u => u.firebaseUid === fbUser.uid || u.username.toLowerCase() === email.toLowerCase());
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      const u: User = {
-        firstName: localUser?.firstName || firstName,
-        lastName: localUser?.lastName || lastName,
-        username: localUser?.username || email || `apple_${fbUser.uid.substring(0, 5)}`,
-        birthday: localUser?.birthday || '2000-01-01',
-        credits: localUser?.credits ?? getStartingCredits(),
-        lastCreditDay: localUser?.lastCreditDay || new Date().toDateString(),
-        createdAt: localUser?.createdAt || new Date().toLocaleDateString('de-DE'),
-        customApiKey: localUser?.customApiKey || '',
-        firebaseUid: fbUser.uid,
-        email: email
-      };
-
-      // Generate verification code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setPendingGoogleLogin({ user: u, code, email });
-      setGoogleVerificationCodeInput('');
-      setAuthError('');
-      setGoogleSmtpError(null);
-      setAuthModalTab('verify_google');
-      setIsSendingGoogleCode(true);
-
-      try {
-        const res = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code, type: 'apple' })
-        });
-        const data = await res.json();
-        if (data.success) {
-          setGoogleCodeMethod(data.method);
-          if (data.method === 'simulation' || data.method === 'failed_smtp') {
-            setGoogleCodeSimulationValue(data.code);
-          }
-          if (data.smtpError) {
-            setGoogleSmtpError(data.smtpError);
-          }
-          triggerToast(language === 'de' ? 'Verifizierungscode wurde gesendet!' : 'Verification code sent!');
-        } else {
-          setAuthError(language === 'de' ? 'Fehler beim Senden des Bestätigungscodes.' : 'Failed to send verification code.');
-        }
-      } catch (e) {
-        console.error('Error sending Apple verification email:', e);
-        setAuthError(language === 'de' ? 'E-Mail-Versand fehlgeschlagen.' : 'Email delivery failed.');
-      } finally {
-        setIsSendingGoogleCode(false);
-      }
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        return;
-      }
-      if (err.code === 'auth/operation-not-allowed') {
-        setAuthError(language === 'de' 
-          ? '⚠️ Apple-Anmeldung ist im Standard-Firebase-Projekt deaktiviert. Da du es in DEINEM Projekt aktiviert hast, musst du deine eigenen Firebase-Credentials (API-Key, Projekt-ID, App-ID, etc.) in den Umgebungsvariablen (Settings) der Plattform eintragen, damit die App auf dein eigenes Projekt zugreift!'
-          : '⚠️ Apple sign-in is disabled in the default Firebase project. Since you enabled it in YOUR project, you must configure your custom Firebase credentials (API Key, Project ID, App ID, etc.) in the Environment Settings so the app connects to your own project!');
-        return;
-      }
-      setAuthError(err.message || (language === 'de' ? 'Apple Anmeldung ist fehlgeschlagen.' : 'Apple Login failed.'));
-    }
-  };
 
   // Complete Google Login after correct verification code is entered
   const handleVerifyGoogleCode = () => {
@@ -2071,7 +1968,7 @@ export default function App() {
             
             {/* Tooltip */}
             <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[9px] uppercase font-black tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/15">
-              AlerksAI
+              AleksAI
             </div>
           </div>
           <span className="text-[7.5px] font-black tracking-widest text-[#4f6ef7] opacity-80 select-none uppercase mt-1">v2.2</span>
@@ -2137,7 +2034,7 @@ export default function App() {
             </div>
           </button>
 
-          {/* TAB 3: AlerksAI Chat */}
+          {/* TAB 3: AleksAI Chat */}
           <button
             onClick={() => showPage('chat')}
             className={`w-10 h-10 md:w-11 md:h-11 rounded-2xl flex items-center justify-center relative transition-all duration-300 cursor-pointer group ${
@@ -2158,7 +2055,7 @@ export default function App() {
             
             {/* Tooltip */}
             <div className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-950 text-white text-[10px] font-black tracking-wider pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 shadow-xl border border-white/10">
-              {language === 'de' ? 'AlerksAI Chat' : 'AlerksAI Chat'}
+              {language === 'de' ? 'AleksAI Chat' : 'AleksAI Chat'}
             </div>
           </button>
 
@@ -2282,7 +2179,7 @@ export default function App() {
             className="flex items-center gap-2 font-extrabold text-[15px] sm:text-[18px] md:text-[20px] cursor-pointer"
           >
             <AleksAILogo className="w-5 h-5 sm:w-6 sm:h-6 text-[#4f6ef7]" glow={true} />
-            <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AlerksAI Intelegence</span>
+            <span className="bg-gradient-to-r from-[#4f6ef7] via-[#8b5cf6] to-[#ec4899] bg-clip-text text-transparent font-black tracking-tight">AleksAI Intelegence</span>
           </div>
         </div>
 
@@ -2374,7 +2271,7 @@ export default function App() {
                 onClick={() => {
                   setSettingsActiveTab('shop');
                   setShowSettingsModal(true);
-                  triggerToast(language === 'de' ? "AlerksAI Credit Shop geöffnet ⚡" : "AlerksAI Credit Shop opened ⚡");
+                  triggerToast(language === 'de' ? "AleksAI Credit Shop geöffnet ⚡" : "AleksAI Credit Shop opened ⚡");
                 }}
                 className={`hidden xs:inline-flex text-[11px] font-black px-2.5 py-1.5 rounded-full items-center gap-1.5 cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95 border ${darkMode ? 'bg-indigo-950/40 border-indigo-900/40 text-indigo-300 hover:bg-indigo-900/50 shadow-[0_0_12px_rgba(99,102,241,0.2)]' : 'bg-pink-50 border-pink-100 text-pink-600 hover:bg-pink-100 shadow-[0_0_12px_rgba(236,72,153,0.15)]'}`}
                 title={language === 'de' ? "Credits aufladen / Shop öffnen" : "Recharge credits / Open shop"}
@@ -2595,12 +2492,12 @@ export default function App() {
                     {language === 'de' ? '💰 Finanz-Vorteil' : '💰 Financial Advantage'}
                   </span>
                   <h2 className={`text-2xl md:text-3xl font-black mt-3 mb-2.5 tracking-tight ${darkMode ? 'text-white' : 'text-[#0d0f1a]'}`}>
-                    {language === 'de' ? 'Dein Ersparnis bei AlerksAI' : 'Your Savings at AlerksAI'}
+                    {language === 'de' ? 'Dein Ersparnis bei AleksAI' : 'Your Savings at AleksAI'}
                   </h2>
                   <p className={`text-xs md:text-sm max-w-xl mx-auto leading-relaxed ${darkMode ? 'text-slate-400' : 'text-[#4a4e6a]'}`}>
                     {language === 'de' 
-                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AlerksAI Max, neo, Pro, Ultra und Business im Vergleich zu teuren Abos sparst!'
-                      : 'Calculate in real-time how much money you save by using AlerksAI’s free tools instead of paying for expensive monthly subscriptions.'}
+                      ? 'Berechne live, wie viel Geld du durch den kostenlosen Zugang zu AleksAI Max, neo, Pro, Ultra und Business im Vergleich zu teuren Abos sparst!'
+                      : 'Calculate in real-time how much money you save by using AleksAI’s free tools instead of paying for expensive monthly subscriptions.'}
                   </p>
                 </div>
 
@@ -2667,7 +2564,7 @@ export default function App() {
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-slate-200/55 dark:border-slate-850/55 text-[10px] text-slate-400 flex items-center justify-between font-bold">
-                      <span>AlerksAI Intelegence Cost:</span>
+                      <span>AleksAI Intelegence Cost:</span>
                       <span className="text-green-500 font-black uppercase text-xs tracking-wider">€0.00 (FREE FOR EVER)</span>
                     </div>
                   </div>
@@ -2680,8 +2577,8 @@ export default function App() {
                       </h3>
                       <p className="text-[11px] text-slate-400 leading-normal mb-4">
                         {language === 'de'
-                          ? 'Verschiebe den Regler, um einzustellen wie viele Fragen du AlerksAI durchschnittlich pro Tag stellst.'
-                          : 'Drag the slider to adjust how many questions you ask AlerksAI on average per day.'}
+                          ? 'Verschiebe den Regler, um einzustellen wie viele Fragen du AleksAI durchschnittlich pro Tag stellst.'
+                          : 'Drag the slider to adjust how many questions you ask AleksAI on average per day.'}
                       </p>
 
                       <div className="space-y-4">
@@ -3030,11 +2927,11 @@ export default function App() {
                               onChange={(e) => setRModel(e.target.value)}
                               className={`w-full text-xs font-bold px-3 py-2 rounded-xl border-2 outline-none transition cursor-pointer ${darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-[#f7f8fc] border-slate-200 text-slate-900 focus:border-[#4f6ef7]'}`}
                             >
-                              <option value="AlerksAI Max">AlerksAI Max</option>
-                              <option value="AlerksAI neo">AlerksAI neo</option>
-                              <option value="AlerksAI Pro">AlerksAI Pro</option>
-                              <option value="AlerksAI Intelegence">AlerksAI Intelegence</option>
-                              <option value="AlerksAI Business">AlerksAI Business</option>
+                              <option value="AleksAI Max">AleksAI Max</option>
+                              <option value="AleksAI neo">AleksAI neo</option>
+                              <option value="AleksAI Pro">AleksAI Pro</option>
+                              <option value="AleksAI Intelegence">AleksAI Intelegence</option>
+                              <option value="AleksAI Business">AleksAI Business</option>
                             </select>
                           </div>
                         </div>
@@ -3046,7 +2943,7 @@ export default function App() {
                           <textarea 
                             rows={3}
                             required
-                            placeholder={language === 'de' ? "Ich finde AlerksAI super, weil..." : "I love AlerksAI because..."}
+                            placeholder={language === 'de' ? "Ich finde AleksAI super, weil..." : "I love AleksAI because..."}
                             value={rText}
                             onChange={(e) => setRText(e.target.value)}
                             className={`w-full text-xs font-bold px-3 py-2 rounded-xl border-2 outline-none transition resize-none ${darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-[#f7f8fc] border-slate-200 text-slate-900 focus:border-[#4f6ef7]'}`}
@@ -3314,7 +3211,7 @@ export default function App() {
                     <span>💬</span>
                     <span>{isSidebarOpen ? 'Verlauf aus' : 'Verlauf ein'}</span>
                   </button>
-                  <span className="text-[10px] uppercase font-black tracking-widest text-[#8b90a8] hidden sm:inline">AlerksAI WorkSpace</span>
+                  <span className="text-[10px] uppercase font-black tracking-widest text-[#8b90a8] hidden sm:inline">AleksAI WorkSpace</span>
                 </div>
                 
                 {activeSessionObj && (
@@ -3335,7 +3232,7 @@ export default function App() {
                         {language === 'de' ? 'Sprachverbindung Aktiv' : 'Voice Link Active'}
                       </span>
                       <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1">
-                        AlerksAI Voice-Channel v2.5
+                        AleksAI Voice-Channel v2.5
                       </p>
                     </div>
 
@@ -3372,7 +3269,7 @@ export default function App() {
                       <div>
                         <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-white">
                           {liveStatus === 'listening' && (language === 'de' ? 'Ich höre zu...' : 'Listening to you...')}
-                          {liveStatus === 'speaking' && (language === 'de' ? 'AlerksAI spricht...' : 'AlerksAI is speaking...')}
+                          {liveStatus === 'speaking' && (language === 'de' ? 'AleksAI spricht...' : 'AleksAI is speaking...')}
                           {liveStatus === 'processing' && (language === 'de' ? 'Nachdenken...' : 'Thinking...')}
                           {liveStatus === 'idle' && (language === 'de' ? 'Bereit für Gespräch' : 'Ready to speak')}
                         </h3>
@@ -3767,8 +3664,8 @@ export default function App() {
                                     </div>
                                     <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
                                       {language === 'de' 
-                                        ? 'AlerksAI sucht live im Web nach aktuellen Ereignissen und Quellennachweisen.' 
-                                        : 'AlerksAI searches the web live for real-time events and dynamic source links.'}
+                                        ? 'AleksAI sucht live im Web nach aktuellen Ereignissen und Quellennachweisen.' 
+                                        : 'AleksAI searches the web live for real-time events and dynamic source links.'}
                                     </p>
                                   </div>
                                 </label>
@@ -3782,7 +3679,7 @@ export default function App() {
                                       setIsStudyModeActive(!isStudyModeActive);
                                       triggerToast(
                                         !isStudyModeActive
-                                          ? (language === 'de' ? '🎓 Schulmodus aktiv! AlerksAI fokussiert sich rein auf Schule.' : '🎓 Study mode active! AlerksAI is now focused only on learning.')
+                                          ? (language === 'de' ? '🎓 Schulmodus aktiv! AleksAI fokussiert sich rein auf Schule.' : '🎓 Study mode active! AleksAI is now focused only on learning.')
                                           : (language === 'de' ? 'Schulmodus deaktiviert' : 'Study mode disabled')
                                       );
                                     }}
@@ -3795,8 +3692,8 @@ export default function App() {
                                     </div>
                                     <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
                                       {language === 'de'
-                                        ? 'Konzentriert AlerksAI rein auf pädagogisch wertvolle Schulerklärungen und Hausaufgaben.'
-                                        : 'Locks AlerksAI into dedicated educational help, preventing non-study distractions.'}
+                                        ? 'Konzentriert AleksAI rein auf pädagogisch wertvolle Schulerklärungen und Hausaufgaben.'
+                                        : 'Locks AleksAI into dedicated educational help, preventing non-study distractions.'}
                                     </p>
                                   </div>
                                 </label>
@@ -3814,8 +3711,8 @@ export default function App() {
                                         setIsSilentMode(false);
                                         triggerToast(
                                           language === 'de' 
-                                            ? '🎙️ Live-Anruf gestartet! AlerksAI hört dir jetzt live zu.' 
-                                            : '🎙️ Live Call started! AlerksAI is listening to you live.'
+                                            ? '🎙️ Live-Anruf gestartet! AleksAI hört dir jetzt live zu.' 
+                                            : '🎙️ Live Call started! AleksAI is listening to you live.'
                                         );
                                       } else {
                                         triggerToast(
@@ -3834,8 +3731,8 @@ export default function App() {
                                     </div>
                                     <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed mt-0.5">
                                       {language === 'de'
-                                        ? 'Telefoniere direkt per Sprache mit AlerksAI. Er spricht und hört dir vollautomatisch zu.'
-                                        : 'Talk directly with AlerksAI using your voice. He will speak and listen in real-time.'}
+                                        ? 'Telefoniere direkt per Sprache mit AleksAI. Er spricht und hört dir vollautomatisch zu.'
+                                        : 'Talk directly with AleksAI using your voice. He will speak and listen in real-time.'}
                                     </p>
                                   </div>
                                 </label>
@@ -3920,7 +3817,7 @@ export default function App() {
                               darkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-[#e2e5f1] text-[#0d0f1a]'
                             }`}>
                               <h3 className="text-[11px] font-black uppercase tracking-wider mb-2.5 opacity-75">
-                                {language === 'de' ? 'AlerksAI Creator-Hub' : 'AlerksAI Creator Hub'}
+                                {language === 'de' ? 'AleksAI Creator-Hub' : 'AleksAI Creator Hub'}
                               </h3>
                               
                               <div className="space-y-1.5">
@@ -4065,13 +3962,13 @@ export default function App() {
                         }}
                         placeholder={
                           isImageGeneratorMode 
-                            ? (language === 'de' ? 'Beschreibe das Bild, das AlerksAI generieren soll...' : 'Describe the image AlerksAI should generate...')
+                            ? (language === 'de' ? 'Beschreibe das Bild, das AleksAI generieren soll...' : 'Describe the image AleksAI should generate...')
                             : isSoundGeneratorMode
-                              ? (language === 'de' ? 'Beschreibe den Sound-Effekt, den AlerksAI erzeugen soll...' : 'Describe the sound effect AlerksAI should create...')
+                              ? (language === 'de' ? 'Beschreibe den Sound-Effekt, den AleksAI erzeugen soll...' : 'Describe the sound effect AleksAI should create...')
                               : isMusicGeneratorMode
-                                ? (language === 'de' ? 'Beschreibe das Musikstück, das AlerksAI komponieren soll...' : 'Describe the music AlerksAI should compose...')
+                                ? (language === 'de' ? 'Beschreibe das Musikstück, das AleksAI komponieren soll...' : 'Describe the music AleksAI should compose...')
                                 : isVideoGeneratorMode
-                                  ? (language === 'de' ? 'Beschreibe das Video, das AlerksAI erzeugen soll...' : 'Describe the video AlerksAI should generate...')
+                                  ? (language === 'de' ? 'Beschreibe das Video, das AleksAI erzeugen soll...' : 'Describe the video AleksAI should generate...')
                                   : t('placeholderChat')
                         }
                         rows={1}
@@ -4116,7 +4013,7 @@ export default function App() {
             <div className={`p-6 md:p-8 rounded-3xl border mb-6 relative overflow-hidden flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${darkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-800' : 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white border-emerald-500/20'}`}>
               <div>
                 <span className="text-[10px] font-black tracking-widest text-emerald-500 uppercase">
-                  🎓 AlerksAI Premium Schulmodus
+                  🎓 AleksAI Premium Schulmodus
                 </span>
                 <h1 className={`text-2xl md:text-3xl font-black mt-1 ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                   🧑🏽‍🏫 Lernzentrum & Hausaufgaben-Helfer
@@ -4180,10 +4077,10 @@ export default function App() {
                       
                       setIsStudyLoading(true);
                       setStudyResult('');
-                      triggerToast(language === 'de' ? '💡 AlerksAI formuliert Lernunterstützung...' : '💡 Generating answer...');
+                      triggerToast(language === 'de' ? '💡 AleksAI formuliert Lernunterstützung...' : '💡 Generating answer...');
                       
                       try {
-                        const explanatoryContext = `Du bist AlerksAI Premium im pädagogisch wertvollsten Schulmodus. Erkläre dem Schüler das Thema "${studySubject}" so anschaulich, motivierend und einfach wie möglich auf Deutsch. Verwende übersichtliche Punkte, verständliche Schritte und ein konkretes Anwendungsbeispiel. Stelle am Schluss eine kleine Kontrollfrage zum Mitdenken! Hier ist die Frage des Schülers: ${studyInput}`;
+                        const explanatoryContext = `Du bist AleksAI Premium im pädagogisch wertvollsten Schulmodus. Erkläre dem Schüler das Thema "${studySubject}" so anschaulich, motivierend und einfach wie möglich auf Deutsch. Verwende übersichtliche Punkte, verständliche Schritte und ein konkretes Anwendungsbeispiel. Stelle am Schluss eine kleine Kontrollfrage zum Mitdenken! Hier ist die Frage des Schülers: ${studyInput}`;
                         
                         const model = activeModel;
                         const keyToUse = customApiKey || '';
@@ -4246,7 +4143,7 @@ export default function App() {
                     {isStudyLoading ? (
                       <div className="flex flex-col items-center justify-center py-16 space-y-3">
                         <div className="w-8 h-8 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-                        <span className="text-xs text-slate-400 font-bold">{language === 'de' ? 'AlerksAI schreibt an der Wandtafel...' : 'AlerksAI is generating...'}</span>
+                        <span className="text-xs text-slate-400 font-bold">{language === 'de' ? 'AleksAI schreibt an der Wandtafel...' : 'AleksAI is generating...'}</span>
                       </div>
                     ) : studyResult ? (
                       <div className="text-xs md:text-sm leading-relaxed text-left font-normal select-text space-y-2 whitespace-pre-wrap select-text">
@@ -4257,8 +4154,8 @@ export default function App() {
                         <p className="font-extrabold text-2xl">⚡</p>
                         <p className="text-xs font-bold leading-relaxed max-w-xs mx-auto">
                           {language === 'de' 
-                            ? 'Wähle links ein Fach, stell deine Frage und AlerksAI bereitet dir eine didaktisch verständliche Hilfestellung auf.'
-                            : 'Select a subject, write down your problem, and AlerksAI will prepare easy-to-understand explanations.'}
+                            ? 'Wähle links ein Fach, stell deine Frage und AleksAI bereitet dir eine didaktisch verständliche Hilfestellung auf.'
+                            : 'Select a subject, write down your problem, and AleksAI will prepare easy-to-understand explanations.'}
                         </p>
                       </div>
                     )}
@@ -4433,9 +4330,9 @@ export default function App() {
               <AleksAILogo className="w-5 h-5 text-[#4f6ef7]" glow={true} />
               <div>
                 <h3 className="text-sm sm:text-base font-black tracking-tight">
-                  {settingsActiveTab === 'shop' ? (language === 'de' ? 'AlerksAI Credit Shop ⚡' : 'AlerksAI Credit Shop ⚡') : t('settings')}
+                  {settingsActiveTab === 'shop' ? (language === 'de' ? 'AleksAI Credit Shop ⚡' : 'AleksAI Credit Shop ⚡') : t('settings')}
                 </h3>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">AlerksAI Intelegence</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">AleksAI Intelegence</p>
               </div>
             </div>
 
@@ -4678,7 +4575,7 @@ export default function App() {
                         }}
                         className={`w-full rounded-xl py-2.5 font-bold text-xs border transition duration-200 cursor-pointer text-center ${darkMode ? 'bg-red-950/20 border-red-900/40 text-red-400 hover:bg-red-950/35' : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200'}`}
                       >
-                        🚪 {language === 'de' ? 'Von AlerksAI abmelden' : 'Logout from AlerksAI'}
+                        🚪 {language === 'de' ? 'Von AleksAI abmelden' : 'Logout from AleksAI'}
                       </button>
                     </>
                   ) : (
@@ -4692,8 +4589,8 @@ export default function App() {
                           <h4 className="font-extrabold text-sm">{language === 'de' ? 'Gast-Benutzer' : 'Guest Account'}</h4>
                           <p className="text-[11px] text-slate-400 leading-normal max-w-xs mx-auto">
                             {language === 'de'
-                              ? 'Du nutzt AlerksAI derzeit im anonymen Gastmodus. Deine Chats und Energie-Guthaben sind lokal an diesen Browser gebunden.'
-                              : 'You are using AlerksAI as a Guest. Your chats and credit balances are stored locally in this browser session.'}
+                              ? 'Du nutzt AleksAI derzeit im anonymen Gastmodus. Deine Chats und Energie-Guthaben sind lokal an diesen Browser gebunden.'
+                              : 'You are using AleksAI as a Guest. Your chats and credit balances are stored locally in this browser session.'}
                           </p>
                         </div>
                         <div className="pt-2 flex flex-col sm:flex-row gap-2">
@@ -4774,7 +4671,7 @@ export default function App() {
                           <span className="text-[10px] sm:text-[11px] font-black text-amber-500 flex items-center gap-0.5">🌟 VIP Access</span>
                         </div>
                         <h4 className="text-sm font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-violet-500">
-                          AlerksAI VIP Membership
+                          AleksAI VIP Membership
                         </h4>
                         <p className="text-[11px] text-slate-400 leading-normal">
                           {language === 'de'
@@ -4965,7 +4862,7 @@ export default function App() {
             </button>
             <div className="text-center mb-6">
               <AleksAILogo className="w-10 h-10 text-[#4f6ef7] mx-auto mb-2" glow={true} />
-              <div className="text-xl font-black bg-gradient-to-r from-[#4f6ef7] to-[#8b5cf6] bg-clip-text text-transparent mb-1">AlerksAI Intelegence</div>
+              <div className="text-xl font-black bg-gradient-to-r from-[#4f6ef7] to-[#8b5cf6] bg-clip-text text-transparent mb-1">AleksAI Intelegence</div>
               <p className="text-xs text-[#8b90a8] font-medium">{t('subtitle')}</p>
             </div>
 
@@ -5011,13 +4908,6 @@ export default function App() {
                 <div>
                   <div className="flex justify-between items-center pl-1">
                     <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">{t('password')}</label>
-                    <button 
-                      type="button"
-                      onClick={() => { setAuthModalTab('forgot_password'); setResetStep('request'); setAuthError(''); setResetEmail(''); }}
-                      className="text-xs font-semibold text-[#4f6ef7] hover:underline cursor-pointer mb-1.5"
-                    >
-                      {language === 'de' ? 'Passwort vergessen?' : 'Forgot password?'}
-                    </button>
                   </div>
                   <input 
                     type="password" 
@@ -5171,129 +5061,7 @@ export default function App() {
               </div>
             )}
 
-            {/* PASSWORD FORGOT TAB */}
-            {authModalTab === 'forgot_password' && (
-              <div className="space-y-4 text-left animate-zoom-in">
-                <div className="text-center pb-2">
-                  <h4 className="text-base font-black text-[#4f6ef7] dark:text-blue-400">
-                    {language === 'de' ? '🔑 Passwort vergessen' : '🔑 Forgot Password'}
-                  </h4>
-                  <p className="text-xs text-[#8b90a8] mt-1.5 leading-relaxed">
-                    {resetStep === 'request'
-                      ? (language === 'de' 
-                        ? 'Gib deine registrierte E-Mail-Adresse ein. Wir senden dir einen Bestätigungscode, um dein Passwort neu festzulegen.' 
-                        : 'Enter your registered email address. We will send you a verification code to set a new password.')
-                      : (language === 'de'
-                        ? `Ein Code wurde an ${resetEmail} gesendet. Bitte gib ihn unten mit deinem neuen Passwort ein.`
-                        : `A code has been sent to ${resetEmail}. Please enter it below with your new password.`)}
-                  </p>
-                </div>
 
-                {resetStep === 'request' ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
-                        {language === 'de' ? 'E-Mail-Adresse' : 'Email Address'}
-                      </label>
-                      <input 
-                        type="email" 
-                        value={resetEmail}
-                        onChange={(e) => setResetEmail(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleRequestPasswordReset()}
-                        className={`w-full px-4 py-3 border rounded-xl text-sm transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white placeholder-slate-600' : 'border-[#e2e5f1] bg-stone-50 text-slate-900 placeholder-slate-400'}`}
-                        placeholder="email@example.com"
-                      />
-                    </div>
-
-                    <button 
-                      onClick={handleRequestPasswordReset}
-                      disabled={isSendingResetCode}
-                      className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-bold py-3.5 rounded-xl text-sm transition duration-200 cursor-pointer shadow-md flex items-center justify-center gap-2"
-                    >
-                      {isSendingResetCode && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {language === 'de' ? 'Bestätigungscode anfordern' : 'Request Verification Code'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
-                        {language === 'de' ? '6-stelliger Bestätigungscode' : '6-Digit Verification Code'}
-                      </label>
-                      <input 
-                        type="text" 
-                        maxLength={6}
-                        value={resetCodeInput}
-                        onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ''))}
-                        className={`w-full px-4 py-3 border rounded-xl text-center text-lg font-black tracking-[6px] transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white' : 'border-[#e2e5f1] bg-stone-50 text-slate-900'}`}
-                        placeholder="123456"
-                      />
-                    </div>
-
-                     {resetCodeMethod === 'simulation' && (
-                       <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/40 text-blue-600 dark:text-blue-300 text-xs text-left font-bold leading-normal space-y-1">
-                         <p className="font-extrabold text-center">ℹ️ {language === 'de' ? 'Statischer / Simulations-Modus' : 'Static / Simulation Mode'}</p>
-                         <p className="text-[10.5px] font-normal opacity-85 leading-relaxed">
-                           {language === 'de'
-                             ? 'Da die Anwendung auf Netlify oder einem statischen Hoster läuft, ist das Node.js-Backend nicht direkt erreichbar. Die E-Mail wurde daher simuliert:'
-                             : 'Since the application is running on Netlify or a static host, the Node.js backend is not directly reachable. The email has been simulated:'}
-                         </p>
-                         <p className="text-center pt-1.5 font-black text-sm border-t border-blue-200/50 dark:border-blue-900/30 text-blue-700 dark:text-blue-400">
-                           {language === 'de' 
-                             ? `Verifizierungscode: ${resetCodeSimulationValue}`
-                             : `Verification Code: ${resetCodeSimulationValue}`}
-                         </p>
-                       </div>
-                     )}
-                    {resetCodeMethod === 'failed_smtp' && (
-                      <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200 text-xs text-left leading-relaxed space-y-1">
-                        <p className="font-bold">⚠️ SMTP-E-Mail-Versand fehlgeschlagen!</p>
-                        <p className="text-[11px] opacity-90">
-                          {language === 'de' 
-                            ? `Deine SMTP-Zugangsdaten sind ungültig oder nicht konfiguriert (${resetSmtpError || 'Fehler 535'}).`
-                            : `Your SMTP credentials are invalid or not configured (${resetSmtpError || 'Error 535'}).`}
-                        </p>
-                        <p className="pt-1 font-extrabold text-sm border-t border-amber-200/60 dark:border-amber-900/40">
-                          {language === 'de' 
-                            ? `Dein Verifizierungscode lautet: ${resetCodeSimulationValue}`
-                            : `Your verification code is: ${resetCodeSimulationValue}`}
-                        </p>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="text-[11px] font-bold text-[#4a4e6a] dark:text-slate-300 uppercase tracking-wider block mb-1.5 pl-1">
-                        {language === 'de' ? 'Neues Passwort (mind. 6 Zeichen)' : 'New Password (min. 6 chars)'}
-                      </label>
-                      <input 
-                        type="password" 
-                        value={newPasswordInput}
-                        onChange={(e) => setNewPasswordInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndResetPassword()}
-                        className={`w-full px-4 py-3 border rounded-xl text-sm transition outline-none ${darkMode ? 'bg-slate-950 border-slate-800 focus:border-blue-500 text-white' : 'border-[#e2e5f1] bg-stone-50'}`}
-                        placeholder={language === 'de' ? 'Passwort wählen' : 'Choose password'}
-                      />
-                    </div>
-
-                    <button 
-                      onClick={handleVerifyAndResetPassword}
-                      className="w-full bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-bold py-3.5 rounded-xl text-sm transition duration-200 cursor-pointer shadow-md"
-                    >
-                      {language === 'de' ? 'Passwort ändern & einloggen' : 'Change Password & Log In'}
-                    </button>
-                  </div>
-                )}
-
-                <button 
-                  onClick={() => { setAuthModalTab('login'); setResetStep('request'); }}
-                  className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition py-1 cursor-pointer text-center block"
-                >
-                  {language === 'de' ? '← Zurück zum Login' : '← Back to Login'}
-                </button>
-              </div>
-            )}
-
-            {/* GOOGLE & APPLE SIGN IN BUTTONS AND SEPARATOR */}
             {(authModalTab === 'login' || authModalTab === 'register') && (
               <>
                 <div className="relative flex py-2 items-center my-3">
@@ -5305,25 +5073,23 @@ export default function App() {
                 <div className="space-y-2.5">
                   <button 
                     onClick={doGoogleLogin}
-                    className={`w-full font-bold py-3 rounded-xl text-xs md:text-sm transition duration-150 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm border ${darkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-850 text-slate-100' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}`}
+                    className={`w-full font-bold py-3 px-5 rounded-xl text-xs md:text-sm transition-all duration-300 cursor-pointer flex items-center justify-center gap-3 shadow-md border hover:scale-[1.01] active:scale-[0.99] ${
+                      darkMode 
+                        ? 'bg-slate-950 hover:bg-slate-900 border-slate-800 hover:border-[#4285F4]/40 text-slate-100 shadow-slate-950/40' 
+                        : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-[#4285F4]/40 text-slate-700 shadow-slate-100/70'
+                    }`}
                   >
-                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#EA4335" d="M12 5.04c1.61 0 3.05.56 4.19 1.65l3.12-3.12C17.43 1.84 14.92 1 12 1 7.35 1 3.39 3.67 1.42 7.58l3.78 2.93c.89-2.67 3.39-4.47 6.8-4.47z"/>
-                      <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.35H12v4.51h6.44c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-1.99 3.43-4.92 3.43-8.61z"/>
-                      <path fill="#FBBC05" d="M5.2 14.73c-.23-.69-.36-1.43-.36-2.2s.13-1.51.36-2.2L1.42 7.4c-.81 1.62-1.27 3.44-1.27 5.37s.46 3.75 1.27 5.37l3.78-2.93z"/>
-                      <path fill="#34A853" d="M12 23c3.24 0 5.96-1.08 7.95-2.91l-3.7-2.87c-1.08.73-2.47 1.16-4.25 1.16-3.41 0-5.91-1.8-6.8-4.47l-3.78 2.93C3.39 19.33 7.35 23 12 23z"/>
-                    </svg>
-                    {language === 'de' ? 'Mit Google anmelden' : (language === 'en' ? 'Sign in with Google' : 'Google Login')}
-                  </button>
-
-                  <button 
-                    onClick={doAppleLogin}
-                    className={`w-full font-bold py-3 rounded-xl text-xs md:text-sm transition duration-150 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm border ${darkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-850 text-slate-100' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}`}
-                  >
-                    <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.05 20.28c-.98.95-2.05 1.88-3.08 1.88-1.01 0-1.31-.61-2.48-.61-1.15 0-1.5.59-2.46.61-.99.02-2.13-1-3.13-1.92-2.03-1.89-3.58-5.32-3.58-8.52 0-5.07 3.32-7.76 6.46-7.76 1.05 0 2.02.37 2.66.75.64.38 1.25.75 1.93.75.68 0 1.18-.34 1.82-.71.74-.43 1.85-.81 3.01-.81 4.83 0 7.23 3.51 7.23 5.12-1.02.48-2.42 1.34-2.42 3.73 0 2.87 2.37 3.84 2.39 3.85-.02.05-.37 1.27-1.25 2.54M15.42 4.42c1.03-1.24 1.7-2.92 1.51-4.42-1.29.05-2.85.86-3.78 1.95-.8.92-1.5 2.62-1.31 4.1 1.44.11 2.91-.71 3.58-1.63"/>
-                    </svg>
-                    {language === 'de' ? 'Mit Apple anmelden' : 'Sign in with Apple'}
+                    <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                      <svg viewBox="0 0 24 24" className="w-4.5 h-4.5">
+                        <path fill="#EA4335" d="M12 5.04c1.61 0 3.05.56 4.19 1.65l3.12-3.12C17.43 1.84 14.92 1 12 1 7.35 1 3.39 3.67 1.42 7.58l3.78 2.93c.89-2.67 3.39-4.47 6.8-4.47z"/>
+                        <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.35H12v4.51h6.44c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-1.99 3.43-4.92 3.43-8.61z"/>
+                        <path fill="#FBBC05" d="M5.2 14.73c-.23-.69-.36-1.43-.36-2.2s.13-1.51.36-2.2L1.42 7.4c-.81 1.62-1.27 3.44-1.27 5.37s.46 3.75 1.27 5.37l3.78-2.93z"/>
+                        <path fill="#34A853" d="M12 23c3.24 0 5.96-1.08 7.95-2.91l-3.7-2.87c-1.08.73-2.47 1.16-4.25 1.16-3.41 0-5.91-1.8-6.8-4.47l-3.78 2.93C3.39 19.33 7.35 23 12 23z"/>
+                      </svg>
+                    </div>
+                    <span className="font-semibold tracking-wide">
+                      {language === 'de' ? 'Mit Google fortfahren' : 'Continue with Google'}
+                    </span>
                   </button>
                 </div>
               </>
@@ -5343,7 +5109,7 @@ export default function App() {
             <button 
               onClick={() => {
                 setShowSurveyModal(false);
-                triggerToast(language === 'de' ? 'Umfrage übersprungen. Viel Spaß mit AlerksAI!' : 'Survey skipped. Have fun with AlerksAI!');
+                triggerToast(language === 'de' ? 'Umfrage übersprungen. Viel Spaß mit AleksAI!' : 'Survey skipped. Have fun with AleksAI!');
               }}
               className="absolute top-5 right-5 px-3 py-1 text-xs font-bold rounded-lg bg-stone-100 dark:bg-slate-800 hover:bg-stone-200 dark:hover:bg-slate-700 transition cursor-pointer text-slate-500 hover:text-slate-800 dark:hover:text-white"
             >
@@ -5356,7 +5122,7 @@ export default function App() {
                 {language === 'de' ? '⚡ Personalisierung' : '⚡ Personalization'}
               </span>
               <h3 className="text-lg font-black tracking-tight">
-                {language === 'de' ? 'Unterstütze AlerksAI' : 'Support AlerksAI'}
+                {language === 'de' ? 'Unterstütze AleksAI' : 'Support AleksAI'}
               </h3>
               <div className="w-12 h-1 bg-[#4f6ef7] rounded-full mt-2" />
             </div>
@@ -5404,12 +5170,12 @@ export default function App() {
                     {language === 'de' ? 'Frage 2 von 3: Hauptinteresse' : 'Question 2 of 3: Main Interest'}
                   </p>
                   <p className="text-sm font-semibold mb-2">
-                    {language === 'de' ? 'Was möchtest du hauptsächlich mit AlerksAI tun?' : 'What do you mainly want to do with AlerksAI?'}
+                    {language === 'de' ? 'Was möchtest du hauptsächlich mit AleksAI tun?' : 'What do you mainly want to do with AleksAI?'}
                   </p>
                   <div className="grid grid-cols-1 gap-2.5">
                     {[
                       { key: 'learning', label: 'Hausaufgaben & Schule 📚', desc: 'Effektive Lernbegleitung und Erklärungen' },
-                      { key: 'building', label: 'Apps & Spiele entwickeln 🤖', desc: 'AlerksAI Studio AI-Builder ausreizen' },
+                      { key: 'building', label: 'Apps & Spiele entwickeln 🤖', desc: 'AleksAI Studio AI-Builder ausreizen' },
                       { key: 'copilot', label: 'Allgemeiner Co-Pilot 🧠', desc: 'Allround-Unterstützung für den Alltag' }
                     ].map((opt) => (
                       <button
@@ -5690,7 +5456,7 @@ export default function App() {
                   <span className="text-3xl animate-bounce">👑</span>
                   <div className="text-left">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-black text-xl tracking-tight">AlerksAI Master-Zentrum</h3>
+                      <h3 className="font-black text-xl tracking-tight">AleksAI Master-Zentrum</h3>
                       <span className="bg-black/30 text-[8px] tracking-widest uppercase font-black px-2 py-0.5 rounded-full border border-white/20">v3.5 LIVE</span>
                     </div>
                     <p className="text-[10px] text-emerald-100 opacity-90 font-bold uppercase tracking-widest mt-0.5">ADMIN-KONTROLLE &amp; REALTIME TELEMETRIE · ANGEMELDET ALS: aleks.smolovic@web.de</p>
@@ -6312,7 +6078,7 @@ export default function App() {
                     <div className="lg:col-span-7 space-y-6">
                       <div className={`p-5 rounded-3xl border ${darkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-[#f8f9fc] border-[#e2e5f1]'}`}>
                         <h4 className="text-xs font-black uppercase tracking-wider text-[#4f6ef7] mb-1">Globale System-Mitteilung (Broadcast)</h4>
-                        <p className={`text-[11px] leading-relaxed mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Erstelle eine leuchtende Info-Nachricht, die sofort ganz oben für alle angemeldeten Benutzer der AlerksAI App eingeblendet wird.</p>
+                        <p className={`text-[11px] leading-relaxed mb-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Erstelle eine leuchtende Info-Nachricht, die sofort ganz oben für alle angemeldeten Benutzer der AleksAI App eingeblendet wird.</p>
                         
                         <textarea 
                           value={adminBroadcast}
@@ -6643,7 +6409,7 @@ export default function App() {
                   {showLegalModal === 'cookies' && (language === 'de' ? 'Cookie-Richtlinie' : 'Cookie Policy')}
                 </h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  AlerksAI Compliance Platform • {new Date().toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US')}
+                  AleksAI Compliance Platform • {new Date().toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US')}
                 </p>
               </div>
             </div>
@@ -6678,8 +6444,8 @@ export default function App() {
                     <h4 className="font-extrabold text-sm text-[#4f6ef7] dark:text-blue-400">2. Kredit-Käufe und Zahlungsdaten</h4>
                     <p>
                       {language === 'de'
-                        ? 'Wenn du im Credit Shop Token-Pakete erwirbst, nutzen wir hochsichere Zahlungsanbieter (z. B. Stripe). AlerksAI speichert zu keinem Zeitpunkt deine Bankdaten oder Kreditkartennummern auf eigenen Servern. Wir protokollieren lediglich den Status des Kaufs (Erfolgreich/Fehlgeschlagen) und die Anzahl der gutgeschriebenen Tokens.'
-                        : 'When purchasing token packages in our Credit Shop, we route through highly secure payment gateways (e.g. Stripe). AlerksAI never saves your banking accounts or credit card numbers on our servers. We only log transaction states (Success/Failed) and credited token amounts.'}
+                        ? 'Wenn du im Credit Shop Token-Pakete erwirbst, nutzen wir hochsichere Zahlungsanbieter (z. B. Stripe). AleksAI speichert zu keinem Zeitpunkt deine Bankdaten oder Kreditkartennummern auf eigenen Servern. Wir protokollieren lediglich den Status des Kaufs (Erfolgreich/Fehlgeschlagen) und die Anzahl der gutgeschriebenen Tokens.'
+                        : 'When purchasing token packages in our Credit Shop, we route through highly secure payment gateways (e.g. Stripe). AleksAI never saves your banking accounts or credit card numbers on our servers. We only log transaction states (Success/Failed) and credited token amounts.'}
                     </p>
                   </div>
 
@@ -6707,8 +6473,8 @@ export default function App() {
                 <>
                   <p>
                     {language === 'de'
-                      ? 'Diese Einkaufsbedingungen regeln die Geschäftsbeziehung zwischen dir und AlerksAI bezüglich des Erwerbs von virtuellen Credits (Tokens) und VIP-Mitgliedschaften.'
-                      : 'These Purchase Terms govern the commercial relationship between you and AlerksAI regarding the acquisition of virtual credits (Tokens) and VIP subscriptions.'}
+                      ? 'Diese Einkaufsbedingungen regeln die Geschäftsbeziehung zwischen dir und AleksAI bezüglich des Erwerbs von virtuellen Credits (Tokens) und VIP-Mitgliedschaften.'
+                      : 'These Purchase Terms govern the commercial relationship between you and AleksAI regarding the acquisition of virtual credits (Tokens) and VIP subscriptions.'}
                   </p>
 
                   <div className="space-y-1">
@@ -6753,8 +6519,8 @@ export default function App() {
                 <>
                   <p>
                     {language === 'de'
-                      ? 'Hier erfährst du im Detail, welche Cookies und Speichertechnologien AlerksAI einsetzt, um dir eine reibungslose Benutzererfahrung zu gewährleisten.'
-                      : 'This section details the cookies and storage technologies used by AlerksAI to ensure a smooth, stable, and persistent web application.'}
+                      ? 'Hier erfährst du im Detail, welche Cookies und Speichertechnologien AleksAI einsetzt, um dir eine reibungslose Benutzererfahrung zu gewährleisten.'
+                      : 'This section details the cookies and storage technologies used by AleksAI to ensure a smooth, stable, and persistent web application.'}
                   </p>
 
                   <div className="space-y-1">
@@ -6806,7 +6572,7 @@ export default function App() {
             </div>
 
             <div className="mt-4 flex justify-between items-center shrink-0">
-              <span className="text-[10px] text-slate-450 font-bold">AlerksAI Compliance Platform</span>
+              <span className="text-[10px] text-slate-450 font-bold">AleksAI Compliance Platform</span>
               <button
                 onClick={() => setShowLegalModal(null)}
                 className="px-5 py-2.5 bg-[#4f6ef7] hover:bg-[#6c83f8] text-white font-black text-xs rounded-xl transition cursor-pointer shadow-sm"
